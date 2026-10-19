@@ -223,10 +223,21 @@ Audio sources: the Context ASR clip comes from [ContextASR-Bench](https://huggin
 - The output is plain text, without word timestamps or speaker diarization. Image and video inputs are unsupported.
 - The examples use single-GPU, non-streaming inference without quantization.
 
-## License and Citation
+## License
 
 This repository's code and model weights are released under the [MIT License](LICENSE). Apache-2.0 source files in the HF model package retain their notices and license. Demo audio retains its source licenses, as listed in the [audio attribution](examples/cases/README.md).
 
-For citation, use the repository-level metadata in [CITATION.cff](CITATION.cff).
+## Citation
+
+If you use Ming-3.0-asr-tiny, please cite this repository. Machine-readable metadata is available in [CITATION.cff](CITATION.cff).
+
+```bibtex
+@misc{ming_3_0_asr_tiny_2026,
+  author = {{inclusionAI}},
+  title = {Ming-3.0-asr-tiny: Context-Aware Speech Recognition},
+  year = {2026},
+  url = {https://github.com/inclusionAI/Ming-3.0-asr}
+}
+```
 
 <!-- Core contributors: Xuyi Zhuang · Xuezhi Wang · Chunxiang Jin · Hao Chen. Special thanks to the Bailing team at Ant Group. -->
