@@ -40,7 +40,7 @@ def test_english_video_has_visible_preview_and_hosted_file():
     contents = (ROOT / "README.md").read_text(encoding="utf-8")
     assert (ROOT / "figures/intro-en.jpg").is_file()
     assert "![Watch the English introduction video](figures/intro-en.jpg)" in contents
-    assert "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4" in contents
+    assert "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4" in contents
     assert "intro.zh.mp4" not in contents
 
 

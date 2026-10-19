@@ -24,9 +24,9 @@ Real speech comes with accents, background noise, unfamiliar names, and speciali
 
 ## Introduction Video
 
-[![Watch the English introduction video](figures/intro-en.jpg)](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4)
+[![Watch the English introduction video](figures/intro-en.jpg)](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4)
 
-▶ [Watch the English introduction video](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4)
+▶ [Watch the English introduction video](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4)
 
 ## Architecture
 
