@@ -4,13 +4,11 @@
 
 The examples use the HF model and this repository's Transformers script with BF16, SDPA, greedy decoding, and `max_new_tokens=256` on a CUDA GPU. Ordinary transcription and Context ASR use the same input format. Both requests in the Context comparison seed known Chinese; only the second adds a topic and hotwords. Set up `MODEL_DIR` and dependencies as described in the [English quick start](../../README.md#quick-start).
 
-点击播放器的音量按钮取消静音。Unmute the player to hear each audio sample.
+点击播放入口打开 WAV 音频。Open each WAV link to listen to the sample.
 
 ## 1. Context ASR：同一音频，热词纠正片名
 
-https://github.com/user-attachments/assets/eef64725-bbd2-4961-9e1c-0a65a8bede33
-
-[原始 WAV / Original WAV](audio/context_same_sentence_pcm16.wav?raw=1)
+[▶ 播放音频 / Play audio](audio/context_same_sentence_pcm16.wav?raw=1)
 
 6.57 秒 · ContextASR-Bench ID `04385-3_0-105184_0`
 
@@ -34,9 +32,7 @@ python examples/transcribe.py \
 
 ## 2. 英语 / English
 
-https://github.com/user-attachments/assets/6a519004-d0b3-43d9-a0d3-05caa6ed20cc
-
-[原始 WAV / Original WAV](audio/english_common_voice.wav?raw=1)
+[▶ 播放音频 / Play audio](audio/english_common_voice.wav?raw=1)
 
 2.26 秒 · Common Voice 15 ID `common_voice_en_100540`
 
@@ -53,9 +49,7 @@ python examples/transcribe.py --model "$MODEL_DIR" \
 
 ## 3. 中文 / Mandarin
 
-https://github.com/user-attachments/assets/9f757b2d-c1df-4223-afb7-079b7b87bfc5
-
-[原始 WAV / Original WAV](audio/chinese_common_voice.wav?raw=1)
+[▶ 播放音频 / Play audio](audio/chinese_common_voice.wav?raw=1)
 
 5.90 秒 · Common Voice 15 ID `common_voice_zh-CN_22099416`
 

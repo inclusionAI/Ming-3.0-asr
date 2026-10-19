@@ -165,13 +165,11 @@ The sample transcript is `漓江和湘江有秦代开凿的灵渠沟通`. See th
 <a id="cookbook"></a>
 ## Cookbook: From Transcription to Context
 
-Play each waveform audio sample, unmute the player, and compare the reference with the model output. The original WAV is available below each player. Punctuation is removed, and English is lowercased for display.
+Open each WAV sample to listen, then compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
 
 ### Mandarin Transcription
 
-https://github.com/user-attachments/assets/9f757b2d-c1df-4223-afb7-079b7b87bfc5
-
-[Original WAV](examples/cases/audio/chinese_common_voice.wav?raw=1)
+[▶ Play audio](examples/cases/audio/chinese_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -180,9 +178,7 @@ https://github.com/user-attachments/assets/9f757b2d-c1df-4223-afb7-079b7b87bfc5
 
 ### English Transcription
 
-https://github.com/user-attachments/assets/6a519004-d0b3-43d9-a0d3-05caa6ed20cc
-
-[Original WAV](examples/cases/audio/english_common_voice.wav?raw=1)
+[▶ Play audio](examples/cases/audio/english_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -193,9 +189,7 @@ https://github.com/user-attachments/assets/6a519004-d0b3-43d9-a0d3-05caa6ed20cc
 
 Only the second request adds a topic and hotwords to the same audio clip.
 
-https://github.com/user-attachments/assets/eef64725-bbd2-4961-9e1c-0a65a8bede33
-
-[Original WAV](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
+[▶ Play audio](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
