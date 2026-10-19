@@ -24,7 +24,9 @@ Real speech comes with accents, background noise, unfamiliar names, and speciali
 
 ## Introduction Video
 
-https://github.com/user-attachments/assets/366d5c76-7d7a-4c74-9315-d3b1ca1923a0
+https://github.com/user-attachments/assets/11ca7c5f-f827-4ed4-ab57-b4315f410cf5
+
+[Watch the release film](https://github.com/NiniAndy/Ming-3.0-asr-tiny-blog/releases/download/media-2026-10-19/ming-3.0-asr-final.mp4)
 
 ## Architecture
 

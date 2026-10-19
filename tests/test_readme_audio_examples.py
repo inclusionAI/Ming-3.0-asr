@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-INTRO_VIDEO = "366d5c76-7d7a-4c74-9315-d3b1ca1923a0"
+INTRO_VIDEO = "11ca7c5f-f827-4ed4-ab57-b4315f410cf5"
 SAMPLE_FILES = {
     "chinese_common_voice.wav",
     "english_common_voice.wav",
