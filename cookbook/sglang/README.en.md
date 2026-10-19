@@ -2,20 +2,20 @@
 
 [Model README](../../README.md)
 
-This guide covers single-GPU SGLang serving for Ming-3.0-asr-tiny. The Ming audio adapter is available in [inclusionAI/sglang_ling_v3 (ling_v3_audio_for_pr)](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr). The commands below use the released checkpoint, a pinned upstream base, and the adapter patches included here. Ordinary transcription and dataset evaluation use different prompts and decoding settings.
+This guide covers single-GPU SGLang serving for Ming-3.0-asr-tiny. Use the [Ming audio adapter branch](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr) at the pinned commit below, together with the released checkpoint and the model-class alias patch included here. Ordinary transcription and dataset evaluation use different prompts and decoding settings.
 
 ## Environment and versions
 
 | Component | Version |
 | --- | --- |
-| Public SGLang base | `sgl-project/sglang`, commit `81f27fb3a71d3504eab821a9d39352c924c730cf` |
-| Ming ASR adapter | Three [bundled patches](patches/); two add Ming ASR audio support and the third maps the released model class |
+| Ming ASR adapter source | [`inclusionAI/sglang_ling_v3`, branch `ling_v3_audio_for_pr`](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr), commit `bba862771a9e3413a062dad33e8b494ea9f7755b` |
+| Model-class alias | [Bundled patch](patches/ming-v3-asr-alias.patch) maps the released model class |
 | Checkpoint | `inclusionAI/Ming-3.0-asr-tiny`, audio-only revision `d08d77d4b32f0707eb430a995ccbf933f0b04583` |
 | Compatibility patch | [`ming-v3-asr-alias.patch`](patches/ming-v3-asr-alias.patch) |
 | Runtime | Linux x86-64, Python 3.12.3, NVIDIA L20Y 80 GB, BF16, one GPU |
 | Dependencies | [requirements.txt](requirements.txt) |
 
-This directory includes pinned dependencies (`requirements.txt`), two Ming ASR support patches plus a model-class alias (`patches/`), and setup/server/client scripts (`scripts/`). The SGLang adapter patches retain the upstream [Apache-2.0 license](LICENSE-APACHE-2.0).
+This directory includes pinned dependencies (`requirements.txt`), a model-class alias patch, compatibility patches for the upstream base (`patches/`), and setup/server/client scripts (`scripts/`). The adapter patches retain the upstream [Apache-2.0 license](LICENSE-APACHE-2.0).
 
 ## 1. Clone the repo and install the serving environment
 
@@ -35,15 +35,16 @@ Do not install the checkpoint's separate HF `requirements.txt` into this SGLang 
 
 ## 2. Prepare the adapter and checkpoint
 
-Clone the pinned public SGLang base. The Ming ASR adapter patches are included in this repository:
+Clone the Ming ASR adapter branch and pin the validated source commit:
 
 ```bash
-git clone https://github.com/sgl-project/sglang.git ../sglang_ming_asr
+git clone --single-branch --branch ling_v3_audio_for_pr \
+  https://github.com/inclusionAI/sglang_ling_v3.git ../sglang_ming_asr
 export SGLANG_DIR="$(cd ../sglang_ming_asr && pwd)"
-git -C "$SGLANG_DIR" checkout 81f27fb3a71d3504eab821a9d39352c924c730cf
+git -C "$SGLANG_DIR" checkout bba862771a9e3413a062dad33e8b494ea9f7755b
 ```
 
-An existing full checkout of the same commit can also be used by setting `SGLANG_DIR` to its absolute path. Check it with `git -C "$SGLANG_DIR" rev-parse HEAD`. The PyPI SGLang package supplies dependencies; runtime code comes from the patched checkout.
+An existing full checkout of the same commit can also be used by setting `SGLANG_DIR` to its absolute path. Check it with `git -C "$SGLANG_DIR" rev-parse HEAD`. The PyPI SGLang package supplies dependencies; runtime code comes from this adapter checkout.
 
 Download the checkpoint, or use a complete local copy of the same revision:
 
@@ -58,7 +59,7 @@ For an existing copy, set `MODEL_DIR=/absolute/path/to/model`. The directory mus
 
 ## 3. Apply the class-name mapping and preflight
 
-The first two patches add Ming ASR audio support to the pinned public base; the final patch maps the checkpoint's `MingV3ASR` name to that audio implementation. They do not change checkpoint weights or generation settings. The adapter patches follow SGLang's [Apache-2.0 license](LICENSE-APACHE-2.0). Apply them to the pinned checkout:
+The adapter branch already contains Ming ASR audio support. The script applies only the `MingV3ASR` class-name alias to this commit; it does not change checkpoint weights or generation settings. The compatibility patches follow SGLang's [Apache-2.0 license](LICENSE-APACHE-2.0):
 
 ```bash
 SGLANG_DIR="$SGLANG_DIR" bash "$GUIDE_DIR/scripts/apply_patch.sh"

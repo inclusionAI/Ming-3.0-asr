@@ -126,7 +126,7 @@ print(decode_transcript(
 
 ### 5. SGLang Accelerated Serving
 
-The Ming audio adapter is available in [inclusionAI/sglang_ling_v3 (ling_v3_audio_for_pr)](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr). The commands below use the pinned upstream base and the adapter patches included in this repository.
+Use the [Ming SGLang adapter branch](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr) at the pinned commit below. This repository includes the model-class alias patch and serving examples.
 
 Use a separate Python 3.12 environment for SGLang. Keep the model downloaded in Step 2, then run these commands from the repository root:
 
@@ -136,9 +136,10 @@ source .venv-sglang/bin/activate
 unset PYTHONPATH
 python -m pip install -r cookbook/sglang/requirements.txt
 python -m pip check
-git clone https://github.com/sgl-project/sglang.git ../sglang_ming_asr
+git clone --single-branch --branch ling_v3_audio_for_pr \
+  https://github.com/inclusionAI/sglang_ling_v3.git ../sglang_ming_asr
 export SGLANG_DIR="$(cd ../sglang_ming_asr && pwd)"
-git -C "$SGLANG_DIR" checkout 81f27fb3a71d3504eab821a9d39352c924c730cf
+git -C "$SGLANG_DIR" checkout bba862771a9e3413a062dad33e8b494ea9f7755b
 export GUIDE_DIR="$(pwd)/cookbook/sglang"
 export PYTHON_BIN="$(command -v python)"
 SGLANG_DIR="$SGLANG_DIR" bash "$GUIDE_DIR/scripts/apply_patch.sh"
