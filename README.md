@@ -126,6 +126,8 @@ print(decode_transcript(
 
 ### 5. SGLang Accelerated Serving
 
+The Ming audio adapter is available in [inclusionAI/sglang_ling_v3 (ling_v3_audio_for_pr)](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr). The commands below use the pinned upstream base and the adapter patches included in this repository.
+
 Use a separate Python 3.12 environment for SGLang. Keep the model downloaded in Step 2, then run these commands from the repository root:
 
 ```bash

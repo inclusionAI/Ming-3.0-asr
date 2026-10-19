@@ -2,7 +2,7 @@
 
 [Model README](../../README.md)
 
-This guide covers single-GPU SGLang serving for Ming-3.0-asr-tiny. It uses the released checkpoint, a pinned adapter, and a class-name compatibility patch. Ordinary transcription and dataset evaluation use different prompts and decoding settings.
+This guide covers single-GPU SGLang serving for Ming-3.0-asr-tiny. The Ming audio adapter is available in [inclusionAI/sglang_ling_v3 (ling_v3_audio_for_pr)](https://github.com/inclusionAI/sglang_ling_v3/tree/ling_v3_audio_for_pr). The commands below use the released checkpoint, a pinned upstream base, and the adapter patches included here. Ordinary transcription and dataset evaluation use different prompts and decoding settings.
 
 ## Environment and versions
 
