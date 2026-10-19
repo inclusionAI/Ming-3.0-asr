@@ -1,4 +1,4 @@
-"""The embedded audio players must point to committed sample files."""
+"""The visible audio links must point to committed sample files."""
 
 import json
 import re
@@ -14,19 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
     (ROOT / "README.md", 3),
     (ROOT / "examples/cases/README.md", 3),
 ))
-def test_embedded_audio_players_resolve(readme, expected):
+def test_audio_links_resolve(readme, expected):
     paths = re.findall(
-        r'<audio\b[^>]*\bcontrols\b[^>]*\bsrc="([^"]+\.wav)"',
+        r'\[.*?Listen to (?:the )?(?:Mandarin|English|Context ASR|audio).*?\]\(([^)]+\.wav\?raw=1)\)',
         readme.read_text(encoding="utf-8"),
     )
     assert len(paths) == expected
     for path in paths:
-        if readme == ROOT / "README.md":
-            prefix = "https://raw.githubusercontent.com/inclusionAI/Ming-3.0-asr/main/"
-        else:
-            prefix = "/zhuangxuyi.zxy/Ming-3.0-asr-tiny/-/raw/master/"
-        assert path.startswith(prefix)
-        assert (ROOT / path.removeprefix(prefix)).is_file()
+        assert (readme.parent / path.removesuffix("?raw=1")).is_file()
 
 
 def test_demo_follows_model_introduction():
@@ -35,10 +30,18 @@ def test_demo_follows_model_introduction():
         contents.index("## Quick Start")
         < contents.index("### 5. SGLang Accelerated Serving")
         < contents.index('<a id="cookbook"></a>')
-        < contents.index("<audio controls")
+        < contents.index("▶ [Listen to the Mandarin sample]")
     )
     assert "git clone https://github.com/inclusionAI/Ming-3.0-asr.git" in contents
     assert "Real speech comes with accents" in contents
+
+
+def test_english_video_has_visible_preview_and_hosted_file():
+    contents = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert (ROOT / "figures/intro-en.jpg").is_file()
+    assert "![Watch the English introduction video](figures/intro-en.jpg)" in contents
+    assert "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4" in contents
+    assert "intro.zh.mp4" not in contents
 
 
 def test_context_demo_uses_same_audio_for_both_requests():

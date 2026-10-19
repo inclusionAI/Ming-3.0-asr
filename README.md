@@ -22,6 +22,12 @@ Real speech comes with accents, background noise, unfamiliar names, and speciali
 - **Context ASR:** include relevant names, places, products, or technical terms in the transcription prompt.
 - **Challenging speech:** evaluation covers chat, government, health, knowledge, local-life, and high-noise scenarios.
 
+## Introduction Video
+
+[![Watch the English introduction video](figures/intro-en.jpg)](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4)
+
+▶ [Watch the English introduction video](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/blob/main/media/ming-3.0-asr-tiny-intro.en.mp4)
+
 ## Architecture
 
 <p align="center"><a href="figures/model.jpg"><img src="figures/model.jpg" width="800" alt="Ming-3.0-asr-tiny model architecture"></a></p>
@@ -161,11 +167,11 @@ The sample transcript is `漓江和湘江有秦代开凿的灵渠沟通`. See th
 <a id="cookbook"></a>
 ## Cookbook: From Transcription to Context
 
-Play the audio clips below and compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
+Open each audio sample below to listen, then compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
 
 ### Mandarin Transcription
 
-<audio controls preload="metadata" src="https://raw.githubusercontent.com/inclusionAI/Ming-3.0-asr/main/examples/cases/audio/chinese_common_voice.wav"></audio>
+▶ [Listen to the Mandarin sample](examples/cases/audio/chinese_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -174,7 +180,7 @@ Play the audio clips below and compare the reference with the model output. Punc
 
 ### English Transcription
 
-<audio controls preload="metadata" src="https://raw.githubusercontent.com/inclusionAI/Ming-3.0-asr/main/examples/cases/audio/english_common_voice.wav"></audio>
+▶ [Listen to the English sample](examples/cases/audio/english_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -185,7 +191,7 @@ Play the audio clips below and compare the reference with the model output. Punc
 
 Only the second request adds a topic and hotwords to the same audio clip.
 
-<audio controls preload="metadata" src="https://raw.githubusercontent.com/inclusionAI/Ming-3.0-asr/main/examples/cases/audio/context_same_sentence_pcm16.wav"></audio>
+▶ [Listen to the Context ASR sample](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
