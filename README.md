@@ -165,11 +165,11 @@ The sample transcript is `漓江和湘江有秦代开凿的灵渠沟通`. See th
 <a id="cookbook"></a>
 ## Cookbook: From Transcription to Context
 
-Play the audio samples below and use the speaker control if the player starts muted. Compare the reference with the model output; punctuation is removed, and English is lowercased for display.
+Listen to each WAV sample and compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
 
 ### Mandarin Transcription
 
-https://github.com/user-attachments/assets/a13297d3-1458-406d-8846-585d0cbf37b8
+[▶ Play the Mandarin audio](examples/cases/audio/chinese_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -178,7 +178,7 @@ https://github.com/user-attachments/assets/a13297d3-1458-406d-8846-585d0cbf37b8
 
 ### English Transcription
 
-https://github.com/user-attachments/assets/620afa11-e8d9-4550-ae64-809c36dfcd8b
+[▶ Play the English audio](examples/cases/audio/english_common_voice.wav?raw=1)
 
 | Item | Text |
 | --- | --- |
@@ -189,7 +189,7 @@ https://github.com/user-attachments/assets/620afa11-e8d9-4550-ae64-809c36dfcd8b
 
 Only the second request adds a topic and hotwords to the same audio clip.
 
-https://github.com/user-attachments/assets/62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed
+[▶ Play the Context ASR audio](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
 
 | Item | Text |
 | --- | --- |

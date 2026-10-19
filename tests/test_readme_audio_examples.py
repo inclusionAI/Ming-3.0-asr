@@ -10,28 +10,28 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-MEDIA = {
-    "intro": "366d5c76-7d7a-4c74-9315-d3b1ca1923a0",
-    "mandarin": "a13297d3-1458-406d-8846-585d0cbf37b8",
-    "english": "620afa11-e8d9-4550-ae64-809c36dfcd8b",
-    "context": "62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed",
+INTRO_VIDEO = "366d5c76-7d7a-4c74-9315-d3b1ca1923a0"
+SAMPLE_FILES = {
+    "chinese_common_voice.wav",
+    "english_common_voice.wav",
+    "context_same_sentence_pcm16.wav",
 }
 
 
-@pytest.mark.parametrize("readme, expected", (
-    (ROOT / "README.md", 4),
-    (ROOT / "examples/cases/README.md", 3),
+@pytest.mark.parametrize("readme", (
+    ROOT / "README.md",
+    ROOT / "examples/cases/README.md",
 ))
-def test_inline_media_and_sample_files(readme, expected):
+def test_audio_links_point_to_original_wav_files(readme):
     contents = readme.read_text(encoding="utf-8")
-    urls = re.findall(r"^https://github.com/user-attachments/assets/([0-9a-f-]{36})$", contents, re.M)
-    assert len(urls) == expected
-    expected_urls = set(MEDIA.values())
-    if expected == 3:
-        expected_urls.remove(MEDIA["intro"])
-    assert set(urls) == expected_urls
-    for name in ("chinese_common_voice.wav", "english_common_voice.wav", "context_same_sentence_pcm16.wav"):
-        assert (ROOT / "examples/cases/audio" / name).is_file()
+    paths = re.findall(r"\]\(([^)]+\.wav\?raw=1)\)", contents)
+    assert len(paths) == 3
+    assert {Path(path.removesuffix("?raw=1")).name for path in paths} == SAMPLE_FILES
+    for path in paths:
+        assert (readme.parent / path.removesuffix("?raw=1")).is_file()
+    assert "<audio" not in contents
+    if readme.name != "README.md" or readme.parent != ROOT:
+        assert "user-attachments/assets" not in contents
 
 
 def test_demo_follows_model_introduction():
@@ -40,7 +40,7 @@ def test_demo_follows_model_introduction():
         contents.index("## Quick Start")
         < contents.index("### 5. SGLang Accelerated Serving")
         < contents.index('<a id="cookbook"></a>')
-        < contents.index(f"https://github.com/user-attachments/assets/{MEDIA['mandarin']}")
+        < contents.index("[▶ Play the Mandarin audio]")
     )
     assert "git clone https://github.com/inclusionAI/Ming-3.0-asr.git" in contents
     assert "Real speech comes with accents" in contents
@@ -48,7 +48,8 @@ def test_demo_follows_model_introduction():
 
 def test_english_video_is_inline_and_not_committed():
     contents = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert f"https://github.com/user-attachments/assets/{MEDIA['intro']}" in contents
+    assert f"https://github.com/user-attachments/assets/{INTRO_VIDEO}" in contents
+    assert contents.count("https://github.com/user-attachments/assets/") == 1
     assert not list(ROOT.glob("*.mp4"))
 
 
