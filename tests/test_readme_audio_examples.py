@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 INTRO_VIDEO = "366d5c76-7d7a-4c74-9315-d3b1ca1923a0"
+AUDIO_PLAYERS = {
+    "9f757b2d-c1df-4223-afb7-079b7b87bfc5",
+    "6a519004-d0b3-43d9-a0d3-05caa6ed20cc",
+    "eef64725-bbd2-4961-9e1c-0a65a8bede33",
+}
 SAMPLE_FILES = {
     "chinese_common_voice.wav",
     "english_common_voice.wav",
@@ -24,14 +29,16 @@ SAMPLE_FILES = {
 ))
 def test_audio_links_point_to_original_wav_files(readme):
     contents = readme.read_text(encoding="utf-8")
+    players = set(re.findall(r"^https://github.com/user-attachments/assets/([0-9a-f-]{36})$", contents, re.M))
+    assert AUDIO_PLAYERS <= players
     paths = re.findall(r"\]\(([^)]+\.wav\?raw=1)\)", contents)
     assert len(paths) == 3
     assert {Path(path.removesuffix("?raw=1")).name for path in paths} == SAMPLE_FILES
     for path in paths:
         assert (readme.parent / path.removesuffix("?raw=1")).is_file()
     assert "<audio" not in contents
-    if readme.name != "README.md" or readme.parent != ROOT:
-        assert "user-attachments/assets" not in contents
+    if readme != ROOT / "README.md":
+        assert players == AUDIO_PLAYERS
 
 
 def test_demo_follows_model_introduction():
@@ -40,7 +47,7 @@ def test_demo_follows_model_introduction():
         contents.index("## Quick Start")
         < contents.index("### 5. SGLang Accelerated Serving")
         < contents.index('<a id="cookbook"></a>')
-        < contents.index("[▶ Play the Mandarin audio]")
+        < contents.index("https://github.com/user-attachments/assets/9f757b2d-c1df-4223-afb7-079b7b87bfc5")
     )
     assert "git clone https://github.com/inclusionAI/Ming-3.0-asr.git" in contents
     assert "Real speech comes with accents" in contents
@@ -49,7 +56,7 @@ def test_demo_follows_model_introduction():
 def test_english_video_is_inline_and_not_committed():
     contents = (ROOT / "README.md").read_text(encoding="utf-8")
     assert f"https://github.com/user-attachments/assets/{INTRO_VIDEO}" in contents
-    assert contents.count("https://github.com/user-attachments/assets/") == 1
+    assert contents.count("https://github.com/user-attachments/assets/") == 4
     assert not list(ROOT.glob("*.mp4"))
 
 
