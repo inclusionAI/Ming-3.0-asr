@@ -24,9 +24,7 @@ Real speech comes with accents, background noise, unfamiliar names, and speciali
 
 ## Introduction Video
 
-[![Watch the English introduction video](figures/intro-en.jpg)](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4)
-
-▶ [Watch the English introduction video](https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4)
+https://github.com/user-attachments/assets/366d5c76-7d7a-4c74-9315-d3b1ca1923a0
 
 ## Architecture
 
@@ -167,11 +165,11 @@ The sample transcript is `漓江和湘江有秦代开凿的灵渠沟通`. See th
 <a id="cookbook"></a>
 ## Cookbook: From Transcription to Context
 
-Open each audio sample below to listen, then compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
+Play the audio samples below and compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
 
 ### Mandarin Transcription
 
-▶ [Listen to the Mandarin sample](examples/cases/audio/chinese_common_voice.wav?raw=1)
+https://github.com/user-attachments/assets/a13297d3-1458-406d-8846-585d0cbf37b8
 
 | Item | Text |
 | --- | --- |
@@ -180,7 +178,7 @@ Open each audio sample below to listen, then compare the reference with the mode
 
 ### English Transcription
 
-▶ [Listen to the English sample](examples/cases/audio/english_common_voice.wav?raw=1)
+https://github.com/user-attachments/assets/620afa11-e8d9-4550-ae64-809c36dfcd8b
 
 | Item | Text |
 | --- | --- |
@@ -191,7 +189,7 @@ Open each audio sample below to listen, then compare the reference with the mode
 
 Only the second request adds a topic and hotwords to the same audio clip.
 
-▶ [Listen to the Context ASR sample](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
+https://github.com/user-attachments/assets/62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed
 
 | Item | Text |
 | --- | --- |

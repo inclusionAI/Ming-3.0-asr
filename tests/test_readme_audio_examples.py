@@ -1,4 +1,4 @@
-"""The visible audio links must point to committed sample files."""
+"""README media references must map to the committed sample files."""
 
 import json
 import re
@@ -10,18 +10,28 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+MEDIA = {
+    "intro": "366d5c76-7d7a-4c74-9315-d3b1ca1923a0",
+    "mandarin": "a13297d3-1458-406d-8846-585d0cbf37b8",
+    "english": "620afa11-e8d9-4550-ae64-809c36dfcd8b",
+    "context": "62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed",
+}
+
+
 @pytest.mark.parametrize("readme, expected", (
-    (ROOT / "README.md", 3),
+    (ROOT / "README.md", 4),
     (ROOT / "examples/cases/README.md", 3),
 ))
-def test_audio_links_resolve(readme, expected):
-    paths = re.findall(
-        r'\[.*?Listen to (?:the )?(?:Mandarin|English|Context ASR|audio).*?\]\(([^)]+\.wav\?raw=1)\)',
-        readme.read_text(encoding="utf-8"),
-    )
-    assert len(paths) == expected
-    for path in paths:
-        assert (readme.parent / path.removesuffix("?raw=1")).is_file()
+def test_inline_media_and_sample_files(readme, expected):
+    contents = readme.read_text(encoding="utf-8")
+    urls = re.findall(r"^https://github.com/user-attachments/assets/([0-9a-f-]{36})$", contents, re.M)
+    assert len(urls) == expected
+    expected_urls = set(MEDIA.values())
+    if expected == 3:
+        expected_urls.remove(MEDIA["intro"])
+    assert set(urls) == expected_urls
+    for name in ("chinese_common_voice.wav", "english_common_voice.wav", "context_same_sentence_pcm16.wav"):
+        assert (ROOT / "examples/cases/audio" / name).is_file()
 
 
 def test_demo_follows_model_introduction():
@@ -30,18 +40,16 @@ def test_demo_follows_model_introduction():
         contents.index("## Quick Start")
         < contents.index("### 5. SGLang Accelerated Serving")
         < contents.index('<a id="cookbook"></a>')
-        < contents.index("▶ [Listen to the Mandarin sample]")
+        < contents.index(f"https://github.com/user-attachments/assets/{MEDIA['mandarin']}")
     )
     assert "git clone https://github.com/inclusionAI/Ming-3.0-asr.git" in contents
     assert "Real speech comes with accents" in contents
 
 
-def test_english_video_has_visible_preview_and_hosted_file():
+def test_english_video_is_inline_and_not_committed():
     contents = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert (ROOT / "figures/intro-en.jpg").is_file()
-    assert "![Watch the English introduction video](figures/intro-en.jpg)" in contents
-    assert "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny/resolve/main/media/ming-3.0-asr-tiny-intro.en.mp4" in contents
-    assert "intro.zh.mp4" not in contents
+    assert f"https://github.com/user-attachments/assets/{MEDIA['intro']}" in contents
+    assert not list(ROOT.glob("*.mp4"))
 
 
 def test_context_demo_uses_same_audio_for_both_requests():

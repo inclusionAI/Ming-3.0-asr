@@ -6,7 +6,7 @@ The examples use the HF model and this repository's Transformers script with BF1
 
 ## 1. Context ASR：同一音频，热词纠正片名
 
-▶ [收听音频 / Listen to the audio](audio/context_same_sentence_pcm16.wav?raw=1)
+https://github.com/user-attachments/assets/62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed
 
 6.57 秒 · ContextASR-Bench ID `04385-3_0-105184_0`
 
@@ -30,7 +30,7 @@ python examples/transcribe.py \
 
 ## 2. 英语 / English
 
-▶ [收听音频 / Listen to the audio](audio/english_common_voice.wav?raw=1)
+https://github.com/user-attachments/assets/620afa11-e8d9-4550-ae64-809c36dfcd8b
 
 2.26 秒 · Common Voice 15 ID `common_voice_en_100540`
 
@@ -47,7 +47,7 @@ python examples/transcribe.py --model "$MODEL_DIR" \
 
 ## 3. 中文 / Mandarin
 
-▶ [收听音频 / Listen to the audio](audio/chinese_common_voice.wav?raw=1)
+https://github.com/user-attachments/assets/a13297d3-1458-406d-8846-585d0cbf37b8
 
 5.90 秒 · Common Voice 15 ID `common_voice_zh-CN_22099416`
 
