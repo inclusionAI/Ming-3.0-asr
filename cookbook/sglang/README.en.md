@@ -1,6 +1,6 @@
 # Ming-3.0-asr-tiny: SGLang Serving
 
-[中文指南](README.md) · [Model README](../../README.md)
+[Model README](../../README.md)
 
 This guide covers single-GPU SGLang serving for Ming-3.0-asr-tiny. It uses the released checkpoint, a pinned adapter, and a class-name compatibility patch. Ordinary transcription and dataset evaluation use different prompts and decoding settings.
 
@@ -141,4 +141,4 @@ Results on AISHELL-1 (7,176 samples), LibriSpeech test-clean (2,620), and test-o
 | LibriSpeech test-clean WER | 1.169216% | 1.169216% |
 | LibriSpeech test-other WER | 2.405355% | 2.394009% |
 
-These dataset results use the `/generate` request shown above. The standard transcription endpoint is intended for application use. See the [Chinese guide](README.md) for the same workflow and troubleshooting notes.
+These dataset results use the `/generate` request shown above. The standard transcription endpoint is intended for application use.

@@ -1,12 +1,12 @@
 # Figures
 
-| 文件 | 内容 |
+| File | Description |
 | --- | --- |
-| [bailing-logo.png](bailing-logo.png) | 百灵 Logo |
-| [model.jpg](model.jpg) | 模型架构 |
-| [asr.png](asr.png) | ASR 整体表现 |
-| [open-asr.png](open-asr.png) | 开源中英文 ASR 评测 |
-| [inhouse-asr.png](inhouse-asr.png) | 方言和领域 ASR 评测 |
-| [contextasr.png](contextasr.png) | Context ASR 评测 |
+| [bailing-logo.png](bailing-logo.png) | Bailing logo |
+| [model.jpg](model.jpg) | Model architecture |
+| [asr.png](asr.png) | Overall ASR performance |
+| [open-asr.png](open-asr.png) | Chinese and English ASR benchmarks |
+| [inhouse-asr.png](inhouse-asr.png) | Dialect and domain benchmarks |
+| [contextasr.png](contextasr.png) | Context ASR benchmarks |
 
-[Model README / 模型介绍](../README.md)
+[Model README](../README.md)

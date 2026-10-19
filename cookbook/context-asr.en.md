@@ -1,6 +1,6 @@
 # Context ASR
 
-[简体中文](context-asr.md) · [Model README](../README.md)
+[Model README](../README.md)
 
 Context ASR and ordinary transcription use **one input format**. Append the topic and comma-separated hotwords directly to the base ASR instruction, with no newline, then append the audio. When the language is known, seed `Chinese\t` or `English\t` after the audio tokens. The chunk policy uses 3000 mel frames for clips up to 30 seconds and 6000 for clips from 30 to 60 seconds.
 
