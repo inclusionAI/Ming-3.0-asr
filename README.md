@@ -165,7 +165,7 @@ The sample transcript is `漓江和湘江有秦代开凿的灵渠沟通`. See th
 <a id="cookbook"></a>
 ## Cookbook: From Transcription to Context
 
-Play the audio samples below and compare the reference with the model output. Punctuation is removed, and English is lowercased for display.
+Play the audio samples below and use the speaker control if the player starts muted. Compare the reference with the model output; punctuation is removed, and English is lowercased for display.
 
 ### Mandarin Transcription
 

@@ -4,6 +4,8 @@
 
 The examples use the HF model and this repository's Transformers script with BF16, SDPA, greedy decoding, and `max_new_tokens=256` on a CUDA GPU. Ordinary transcription and Context ASR use the same input format. Both requests in the Context comparison seed known Chinese; only the second adds a topic and hotwords. Set up `MODEL_DIR` and dependencies as described in the [English quick start](../../README.md#quick-start).
 
+播放器如默认静音，请点击音量按钮。If the player starts muted, use its speaker control to enable sound.
+
 ## 1. Context ASR：同一音频，热词纠正片名
 
 https://github.com/user-attachments/assets/62613e2e-6dfa-4f1d-aaa1-ab83dcd78aed
