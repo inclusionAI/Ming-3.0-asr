@@ -1,0 +1,2008 @@
+From 02fdadb52b7e71385b79726a54050d837d6dd2e0 Mon Sep 17 00:00:00 2001
+From: Wang Zhaoyang <WZY_0524@163.com>
+Date: Wed, 30 Sep 2026 16:03:18 +0800
+Subject: [PATCH 1/2] [Model] Support Ming-ASR-Tiny-3.0
+
+---
+ .../model_overrides/bailing_moe_v3.py         |   1 +
+ python/sglang/srt/arg_groups/overrides.py     |   2 +
+ python/sglang/srt/configs/__init__.py         |   6 +
+ python/sglang/srt/configs/bailing_audio_v3.py | 160 +++++++
+ python/sglang/srt/configs/bailing_hybrid.py   |  16 +
+ .../srt/configs/ming_audio_processing.py      |  64 +++
+ python/sglang/srt/configs/model_config.py     |   4 +
+ .../openai/transcription_adapters/__init__.py |   4 +
+ .../transcription_adapters/ming_audio.py      |  35 ++
+ .../layers/rotary_embedding/bailing_mrope.py  |  63 +++
+ python/sglang/srt/models/bailing_audio_v3.py  | 423 ++++++++++++++++++
+ python/sglang/srt/models/bailing_moe_v3.py    |  71 ++-
+ .../srt/multimodal/assets/mel_filters.npz     | Bin 0 -> 4271 bytes
+ .../sglang/srt/multimodal/bailing_audio_io.py | 145 ++++++
+ python/sglang/srt/multimodal/ming_audio.py    | 293 ++++++++++++
+ .../multimodal/processors/bailing_audio.py    | 353 +++++++++++++++
+ .../srt/utils/hf_transformers/common.py       |   2 +
+ .../test_processor_async_call_sites.py        |   1 +
+ 18 files changed, 1627 insertions(+), 16 deletions(-)
+ create mode 100644 python/sglang/srt/configs/bailing_audio_v3.py
+ create mode 100644 python/sglang/srt/configs/ming_audio_processing.py
+ create mode 100644 python/sglang/srt/entrypoints/openai/transcription_adapters/ming_audio.py
+ create mode 100644 python/sglang/srt/models/bailing_audio_v3.py
+ create mode 100644 python/sglang/srt/multimodal/assets/mel_filters.npz
+ create mode 100644 python/sglang/srt/multimodal/bailing_audio_io.py
+ create mode 100644 python/sglang/srt/multimodal/ming_audio.py
+ create mode 100644 python/sglang/srt/multimodal/processors/bailing_audio.py
+
+diff --git a/python/sglang/srt/arg_groups/model_overrides/bailing_moe_v3.py b/python/sglang/srt/arg_groups/model_overrides/bailing_moe_v3.py
+index ac29611f3f..ed206068c5 100644
+--- a/python/sglang/srt/arg_groups/model_overrides/bailing_moe_v3.py
++++ b/python/sglang/srt/arg_groups/model_overrides/bailing_moe_v3.py
+@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
+ @_register_for(
+     "BailingMoeV3ForCausalLM",
+     "BailingMoeV3VLForConditionalGeneration",
++    "BailingMoeV3AudioForConditionalGeneration",
+ )
+ def _bailing_moe_v3_overrides(server_args: Any, hf_config: Any) -> dict:
+     cfg = resolving_view(server_args)
+diff --git a/python/sglang/srt/arg_groups/overrides.py b/python/sglang/srt/arg_groups/overrides.py
+index 306b001a98..e6eac19468 100644
+--- a/python/sglang/srt/arg_groups/overrides.py
++++ b/python/sglang/srt/arg_groups/overrides.py
+@@ -349,6 +349,7 @@ _MAMBA_RADIX_CACHE_ARCHS = frozenset(
+         "BailingMoeV2_5ForCausalLM",
+         "BailingMoeV3ForCausalLM",
+         "BailingMoeV3VLForConditionalGeneration",
++        "BailingMoeV3AudioForConditionalGeneration",
+         "Qwen3NextForCausalLM",
+         "Qwen3_5MoeForConditionalGeneration",
+         "InternS2PreviewForConditionalGeneration",
+@@ -391,6 +392,7 @@ _MAMBA_EXTRA_BUFFER_ARCHS = frozenset(
+         "BailingMoeV2_5ForCausalLM",
+         "BailingMoeV3ForCausalLM",
+         "BailingMoeV3VLForConditionalGeneration",
++        "BailingMoeV3AudioForConditionalGeneration",
+         "FalconH1ForCausalLM",
+         "GraniteMoeHybridForCausalLM",
+         "Glm5NextForConditionalGeneration",
+diff --git a/python/sglang/srt/configs/__init__.py b/python/sglang/srt/configs/__init__.py
+index 6c404b17d1..be530d998b 100644
+--- a/python/sglang/srt/configs/__init__.py
++++ b/python/sglang/srt/configs/__init__.py
+@@ -1,4 +1,8 @@
+ from sglang.srt.configs.afmoe import AfmoeConfig
++from sglang.srt.configs.bailing_audio_v3 import (
++    BailingMoeV3AudioConfig,
++    BailingWhisperAudioConfig,
++)
+ from sglang.srt.configs.bailing_hybrid import BailingHybridConfig, BailingMoeV3VLConfig
+ from sglang.srt.configs.bailing_moe_v2 import BailingMM2Config
+ from sglang.srt.configs.chatglm import ChatGLMConfig
+@@ -88,6 +92,8 @@ from sglang.srt.configs.zaya import ZayaConfig
+ __all__ = [
+     "AfmoeConfig",
+     "BailingHybridConfig",
++    "BailingMoeV3AudioConfig",
++    "BailingWhisperAudioConfig",
+     "BailingMM2Config",
+     "BailingMoeV3VLConfig",
+     "ExaoneConfig",
+diff --git a/python/sglang/srt/configs/bailing_audio_v3.py b/python/sglang/srt/configs/bailing_audio_v3.py
+new file mode 100644
+index 0000000000..ade4f40ed0
+--- /dev/null
++++ b/python/sglang/srt/configs/bailing_audio_v3.py
+@@ -0,0 +1,160 @@
++"""Local audio/text configuration for Ming-ASR-Tiny checkpoints."""
++
++from transformers import AutoConfig, PretrainedConfig
++
++from sglang.srt.configs.bailing_hybrid import BailingHybridConfig
++from sglang.srt.configs.ming_audio_processing import SGLangMingAudioProcessor
++from sglang.srt.multimodal.customized_mm_processor_utils import (
++    register_customized_processor,
++)
++
++
++class BailingWhisperAudioConfig(PretrainedConfig):
++    """Whisper encoder and projector settings stored by Bailing checkpoints."""
++
++    model_type = "bailing_whisper_audio"
++
++    def __init__(
++        self,
++        whisper_encoder_config=None,
++        downsampler_kernel_size_list=None,
++        downsampler_stride_list=None,
++        downsampler_padding_list=None,
++        **kwargs,
++    ):
++        super().__init__(**kwargs)
++        self.whisper_encoder_config = whisper_encoder_config or {
++            "n_mels": 128,
++            "n_ctx": 3000,
++            "n_state": 1280,
++            "n_head": 20,
++            "n_layer": 32,
++        }
++        self.downsampler_kernel_size_list = list(downsampler_kernel_size_list or [3])
++        self.downsampler_stride_list = list(downsampler_stride_list or [2])
++        self.downsampler_padding_list = list(
++            downsampler_padding_list
++            or [kernel // 2 for kernel in self.downsampler_kernel_size_list]
++        )
++        if not (
++            len(self.downsampler_kernel_size_list)
++            == len(self.downsampler_stride_list)
++            == len(self.downsampler_padding_list)
++        ):
++            raise ValueError(
++                "audio downsampler kernel/stride/padding lists must have the same length"
++            )
++
++    @classmethod
++    def from_checkpoint_config(cls, config: dict) -> "BailingWhisperAudioConfig":
++        if "whisper_encoder_config" in config:
++            return cls(**config)
++        return cls(
++            whisper_encoder_config={
++                "n_mels": config.get("n_mels", 128),
++                "n_ctx": config.get("n_audio_ctx", 3000),
++                "n_state": config.get("n_audio_state", 1280),
++                "n_head": config.get("n_audio_head", 20),
++                "n_layer": config.get("n_audio_layer", 32),
++            },
++            downsampler_kernel_size_list=config.get(
++                "downsampler_kernel_size_list", [config.get("ds_kernel_size", 3)]
++            ),
++            downsampler_stride_list=config.get(
++                "downsampler_stride_list", [config.get("ds_stride", 2)]
++            ),
++            downsampler_padding_list=config.get("downsampler_padding_list"),
++            chunk_frames=config.get("chunk_frames", 3000),
++        )
++
++
++@register_customized_processor(SGLangMingAudioProcessor)
++class BailingMoeV3AudioConfig(PretrainedConfig):
++    """Composite config consumed by the local Ming V3 SGLang runtime."""
++
++    model_type = "bailing_moe_v3_audio"
++    sub_configs = {
++        "llm_config": BailingHybridConfig,
++        "audio_config": BailingWhisperAudioConfig,
++    }
++
++    def __init__(
++        self,
++        text_config=None,
++        llm_config=None,
++        audio_config=None,
++        audio_token_id=157168,
++        mlp_depth=2,
++        **kwargs,
++    ):
++        kwargs.pop("model_type", None)
++        if kwargs.get("architectures") in (
++            ["BailingMoeV3VLForConditionalGeneration"],
++            ["MingAudioV3ForConditionalGeneration"],
++        ):
++            kwargs["architectures"] = ["BailingMoeV3AudioForConditionalGeneration"]
++        # Consume old mixed-checkpoint metadata without retaining visual components.
++        for key in (
++            "vision_config",
++            "image_token_id",
++            "video_token_id",
++            "video_rope",
++            "vision_start_token_id",
++            "vision_end_token_id",
++            "mrope_section",
++        ):
++            kwargs.pop(key, None)
++        if text_config is None:
++            text_config = llm_config
++        if isinstance(text_config, dict):
++            text_config = dict(text_config)
++            for key in (
++                "image_patch_token",
++                "video_patch_token",
++                "image_start_token",
++                "video_start_token",
++            ):
++                text_config.pop(key, None)
++            text_config = BailingHybridConfig(**text_config)
++        self.llm_config = text_config or BailingHybridConfig()
++        if isinstance(audio_config, dict):
++            audio_config = BailingWhisperAudioConfig.from_checkpoint_config(
++                audio_config
++            )
++        self.audio_config = audio_config
++        self.audio_token_id = audio_token_id
++        self.mlp_depth = mlp_depth
++
++        if not hasattr(self.llm_config, "rope_parameters"):
++            self.llm_config.rope_parameters = {}
++        rope_parameters = self.llm_config.rope_parameters
++        rope_parameters.setdefault("rope_theta", self.llm_config.rope_theta)
++        rope_parameters.setdefault("rope_type", "default")
++        # The shared language engine consumes three identical sequential axes for
++        # audio/text. Preserve its trained rotary/cache ABI; no image grids exist.
++        rope_parameters.setdefault("mrope_section", [8, 12, 12])
++        # Audio uses sequential positions, never the visual rotary implementation.
++        rope_parameters.pop("video_rope", None)
++        if getattr(self.llm_config, "audio_patch_token", None) is None:
++            self.llm_config.audio_patch_token = audio_token_id
++        if self.llm_config.architectures is None:
++            self.llm_config.architectures = ["BailingMoeV3ForCausalLM"]
++        # Ming's legacy Bailing runtime upcasts the checkpoint's BF16 LM head
++        # and the final hidden states before the vocab GEMM. Keep that contract
++        # checkpoint/config-owned rather than changing other Bailing V3 models.
++        self.llm_config.lm_head_params_dtype = "float32"
++        self.llm_config.lm_head_input_dtype = "float32"
++
++        super().__init__(**kwargs)
++        if self.architectures is None:
++            self.architectures = ["BailingMoeV3AudioForConditionalGeneration"]
++        # Only audio and text are supported, including for legacy checkpoints.
++        self.supported_modalities = ("audio",)
++
++    def get_text_config(self, decoder: bool = False) -> PretrainedConfig:
++        return self.llm_config
++
++
++AutoConfig.register(
++    BailingMoeV3AudioConfig.model_type, BailingMoeV3AudioConfig, exist_ok=True
++)
+diff --git a/python/sglang/srt/configs/bailing_hybrid.py b/python/sglang/srt/configs/bailing_hybrid.py
+index 6c24da731a..5c7351af65 100644
+--- a/python/sglang/srt/configs/bailing_hybrid.py
++++ b/python/sglang/srt/configs/bailing_hybrid.py
+@@ -26,7 +26,14 @@ from sglang.srt.configs.mamba_utils import (
+     Mamba2CacheParams,
+     Mamba2StateShape,
+ )
++from sglang.srt.configs.ming_audio_processing import (
++    SGLangBailingProcessorFactory,
++    is_ming_audio_checkpoint,
++)
+ from sglang.srt.configs.qwen3_vl import Qwen3VLMoeVisionConfig
++from sglang.srt.multimodal.customized_mm_processor_utils import (
++    register_customized_processor,
++)
+ from sglang.srt.runtime_context import get_parallel
+ 
+ logger = logging.get_logger(__name__)
+@@ -236,9 +243,18 @@ class BailingHybridConfig(PretrainedConfig):
+         return Mamba2CacheParams(shape=shape, layers=self.linear_layer_ids)
+ 
+ 
++@register_customized_processor(SGLangBailingProcessorFactory)
+ class BailingMoeV3VLConfig(PretrainedConfig):
+     model_type = "bailing_moe_v3_vl"
+ 
++    @classmethod
++    def from_dict(cls, config_dict, **kwargs):
++        if is_ming_audio_checkpoint(config_dict):
++            from sglang.srt.configs.bailing_audio_v3 import BailingMoeV3AudioConfig
++
++            return BailingMoeV3AudioConfig.from_dict(config_dict, **kwargs)
++        return super().from_dict(config_dict, **kwargs)
++
+     def __init__(
+         self,
+         text_config=None,
+diff --git a/python/sglang/srt/configs/ming_audio_processing.py b/python/sglang/srt/configs/ming_audio_processing.py
+new file mode 100644
+index 0000000000..742d483211
+--- /dev/null
++++ b/python/sglang/srt/configs/ming_audio_processing.py
+@@ -0,0 +1,64 @@
++# Copyright 2026 Ant Group. All rights reserved.
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy at http://www.apache.org/licenses/LICENSE-2.0
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++"""Tokenizer/chat-template adapter; audio preprocessing belongs to SGLang's pipeline.
++
++The standalone HF model owns its full Processor and FeatureExtractor. This
++adapter deliberately does not import checkpoint processor code or vision code.
++"""
++
++from transformers import AutoTokenizer, ProcessorMixin
++
++
++class SGLangMingAudioProcessor(ProcessorMixin):
++    """Expose the trained tokenizer/template to SGLang's request handling."""
++
++    attributes = ["tokenizer"]
++    tokenizer_class = "AutoTokenizer"
++
++    def __init__(self, tokenizer, chat_template=None):
++        template = tokenizer.chat_template if chat_template is None else chat_template
++        super().__init__(tokenizer, chat_template=template)
++        vocabulary = tokenizer.get_vocab()
++        forms = (
++            ("<audio>", "<audioPatch>", "</audio>"),
++            ("<|audio_start|>", "<|audio_pad|>", "<|audio_end|>"),
++        )
++        if not any(all(token in vocabulary for token in form) for form in forms):
++            raise ValueError("tokenizer lacks Ming audio start/patch/end tokens")
++
++    @classmethod
++    def from_pretrained(cls, model_path, *args, **kwargs):
++        template = kwargs.pop("chat_template", None)
++        tokenizer = AutoTokenizer.from_pretrained(model_path, *args, **kwargs)
++        return cls(tokenizer, chat_template=template)
++
++
++def is_ming_audio_checkpoint(config):
++    """Explicit audio-only metadata, or an audio tower without a vision tower."""
++    declared = config.get("supported_modalities")
++    return config.get("audio_config") is not None and (
++        set(declared) == {"audio"}
++        if declared is not None
++        else config.get("vision_config") is None
++    )
++
++
++class SGLangBailingProcessorFactory:
++    """Preserve VL processing while loading legacy audio with the local frontend."""
++
++    @classmethod
++    def from_pretrained(cls, model_path, *args, **kwargs):
++        from transformers import AutoProcessor, PretrainedConfig
++
++        config, _ = PretrainedConfig.get_config_dict(model_path, **kwargs)
++        processor = (
++            SGLangMingAudioProcessor
++            if is_ming_audio_checkpoint(config)
++            else AutoProcessor
++        )
++        return processor.from_pretrained(model_path, *args, **kwargs)
+diff --git a/python/sglang/srt/configs/model_config.py b/python/sglang/srt/configs/model_config.py
+index ad5fa0e15b..a6ccbbb4fc 100644
+--- a/python/sglang/srt/configs/model_config.py
++++ b/python/sglang/srt/configs/model_config.py
+@@ -80,6 +80,7 @@ BAILING_MULTI_GATE_MM_ARCHS = frozenset(
+         "BailingMMNativeForConditionalGeneration",
+         "BailingMM2NativeForConditionalGeneration",
+         "BailingMoeV3VLForConditionalGeneration",
++        "BailingMoeV3AudioForConditionalGeneration",
+     }
+ )
+ 
+@@ -1300,6 +1301,8 @@ class ModelConfig:
+         elif (
+             "BailingMoeV3ForCausalLM" in self.hf_config.architectures
+             or "BailingMoeV3VLForConditionalGeneration" in self.hf_config.architectures
++            or "BailingMoeV3AudioForConditionalGeneration"
++            in self.hf_config.architectures
+         ):
+             self.head_dim = 128
+             self.attention_arch = AttentionArch.MLA
+@@ -2274,6 +2277,7 @@ multimodal_model_archs = [
+     "BailingMMNativeForConditionalGeneration",
+     "BailingMM2NativeForConditionalGeneration",
+     "BailingMoeV3VLForConditionalGeneration",
++    "BailingMoeV3AudioForConditionalGeneration",
+ ]
+ 
+ piecewise_cuda_graph_disabled_model_archs = [
+diff --git a/python/sglang/srt/entrypoints/openai/transcription_adapters/__init__.py b/python/sglang/srt/entrypoints/openai/transcription_adapters/__init__.py
+index e289127294..209807530b 100644
+--- a/python/sglang/srt/entrypoints/openai/transcription_adapters/__init__.py
++++ b/python/sglang/srt/entrypoints/openai/transcription_adapters/__init__.py
+@@ -16,6 +16,9 @@ from sglang.srt.entrypoints.openai.transcription_adapters.granite_speech import
+ from sglang.srt.entrypoints.openai.transcription_adapters.mimo_v2_asr import (  # noqa: F401
+     MiMoV2ASRAdapter,
+ )
++from sglang.srt.entrypoints.openai.transcription_adapters.ming_audio import (  # noqa: F401
++    MingAudioAdapter,
++)
+ from sglang.srt.entrypoints.openai.transcription_adapters.qwen2_audio import (  # noqa: F401
+     Qwen2AudioAdapter,
+ )
+@@ -27,6 +30,7 @@ from sglang.srt.entrypoints.openai.transcription_adapters.whisper import (  # no
+ )
+ 
+ __all__ = [
++    "MingAudioAdapter",
+     "TranscriptionAdapter",
+     "register_transcription_adapter",
+     "resolve_adapter",
+diff --git a/python/sglang/srt/entrypoints/openai/transcription_adapters/ming_audio.py b/python/sglang/srt/entrypoints/openai/transcription_adapters/ming_audio.py
+new file mode 100644
+index 0000000000..2fbe13dfb4
+--- /dev/null
++++ b/python/sglang/srt/entrypoints/openai/transcription_adapters/ming_audio.py
+@@ -0,0 +1,35 @@
++# Copyright 2026 SGLang Team
++# Licensed under the Apache License, Version 2.0.
++"""Ming plain-text transcription adapter for the OpenAI ASR API."""
++
++from sglang.srt.entrypoints.openai.protocol import TranscriptionVerboseResponse
++from sglang.srt.entrypoints.openai.transcription_adapters.base import (
++    TranscriptionAdapter,
++    register_transcription_adapter,
++)
++
++
++@register_transcription_adapter("BailingMoeV3Audio")
++class MingAudioAdapter(TranscriptionAdapter):
++    """Preserve raw transcripts without language-header or timestamp parsing."""
++
++    def build_sampling_params(self, request):
++        if getattr(request, "language", None) is not None:
++            raise ValueError(
++                "Ming ASR currently supports automatic language detection only; omit language"
++            )
++        if getattr(request, "timestamp_granularities", None):
++            raise ValueError("Ming ASR does not produce word or segment timestamps")
++        return {
++            "temperature": request.temperature,
++            "max_new_tokens": max(448, int((request.audio_duration_s or 0) * 15)),
++        }
++
++    def build_verbose_response(self, request, text, ret, tokenizer, usage):
++        return TranscriptionVerboseResponse(
++            language=None,
++            duration=round(request.audio_duration_s or 0, 2),
++            text=text,
++            segments=[],
++            usage=usage,
++        )
+diff --git a/python/sglang/srt/layers/rotary_embedding/bailing_mrope.py b/python/sglang/srt/layers/rotary_embedding/bailing_mrope.py
+index d875f08994..caf2df3296 100644
+--- a/python/sglang/srt/layers/rotary_embedding/bailing_mrope.py
++++ b/python/sglang/srt/layers/rotary_embedding/bailing_mrope.py
+@@ -8,6 +8,7 @@ from sglang.kernels.ops.attention.rotary_triton import (
+ )
+ from sglang.srt.environ import envs
+ from sglang.srt.layers.rotary_embedding.base import RotaryEmbedding
++from sglang.srt.layers.rotary_embedding.mrope import MRotaryEmbedding
+ from sglang.srt.layers.rotary_embedding.yarn import (
+     yarn_find_correction_range,
+     yarn_get_mscale_simple,
+@@ -364,3 +365,65 @@ class BailingMRotaryEmbedding(RotaryEmbedding):
+             .to(dtype=input_ids.dtype)
+         )
+         return positions.unsqueeze(1).to(dtype=input_ids.dtype), position_delta
++
++
++class BailingMlaRotaryEmbedding(MRotaryEmbedding):
++    """Adapt Bailing MLA Q/K views to the shared two-dimensional M-RoPE kernel."""
++
++    @classmethod
++    def get_cached(cls, head_size, max_position, base, is_neox_style, rope_scaling):
++        # Reuse the factory's lifetime checks: model teardown can move shared
++        # buffers to meta or release their storage. A separate key keeps other
++        # models' M-RoPE instances untouched and avoids per-layer cache copies.
++        from sglang.srt.layers.rotary_embedding.factory import (
++            _ROPE_DICT,
++            _get_live_rope_cache_entry,
++        )
++
++        dtype = torch.get_default_dtype()
++        section = tuple(rope_scaling["mrope_section"])
++        interleaved = rope_scaling.get("mrope_interleaved", False)
++        glm = rope_scaling.get("mrope_interleaved_glm", False)
++        key = (
++            cls,
++            head_size,
++            max_position,
++            base,
++            is_neox_style,
++            section,
++            interleaved,
++            glm,
++            dtype,
++        )
++        cached = _get_live_rope_cache_entry(key)
++        if cached is None:
++            cached = cls(
++                head_size,
++                head_size,
++                max_position,
++                base,
++                is_neox_style,
++                dtype,
++                mrope_section=list(section),
++                mrope_interleaved=interleaved,
++                mrope_interleaved_glm=glm,
++            )
++            _ROPE_DICT[key] = cached
++        return cached
++
++    def forward_cuda(self, positions, query, key, fused_set_kv_buffer_arg=None):
++        if query.shape[0] == 0:
++            return query, key
++        if positions.ndim != 2 or not self.mrope_section:
++            return super().forward_cuda(positions, query, key, fused_set_kv_buffer_arg)
++        query_for_rope = query.contiguous().flatten(1) if query.ndim == 3 else query
++        key_for_rope = key.contiguous().flatten(1) if key.ndim == 3 else key
++        super().forward_cuda(
++            positions, query_for_rope, key_for_rope, fused_set_kv_buffer_arg
++        )
++        # Contiguous copies of sliced MLA tensors must be written back in place.
++        if query_for_rope.data_ptr() != query.data_ptr():
++            query.copy_(query_for_rope.view_as(query))
++        if key_for_rope.data_ptr() != key.data_ptr():
++            key.copy_(key_for_rope.view_as(key))
++        return query, key
+diff --git a/python/sglang/srt/models/bailing_audio_v3.py b/python/sglang/srt/models/bailing_audio_v3.py
+new file mode 100644
+index 0000000000..010bc45fcf
+--- /dev/null
++++ b/python/sglang/srt/models/bailing_audio_v3.py
+@@ -0,0 +1,423 @@
++"""Ming-ASR-Tiny audio/text runtime with legacy checkpoint identifiers."""
++
++import logging
++import math
++from typing import Iterable, Optional
++
++import torch
++import torch.nn as nn
++import torch.nn.functional as F
++from sglang.srt.configs.bailing_audio_v3 import BailingMoeV3AudioConfig
++from sglang.srt.layers.quantization.base_config import QuantizationConfig
++from sglang.srt.managers.mm_utils import (
++    MultiModalityDataPaddingPatternMultimodalTokens,
++    general_mm_embed_routine,
++)
++from sglang.srt.managers.schedule_batch import (
++    Modality,
++    MultimodalDataItem,
++    MultimodalInputs,
++)
++from sglang.srt.model_executor.forward_batch_info import ForwardBatch, PPProxyTensors
++from sglang.srt.model_loader.utils import set_default_torch_dtype
++from sglang.srt.model_loader.weight_utils import default_weight_loader
++from sglang.srt.models.bailing_moe_v3 import BailingMoeV3ForCausalLM
++from sglang.srt.multimodal.ming_audio import MingAudioMetadata, MingAudioSpec
++from sglang.srt.runtime_context import get_parallel
++from sglang.srt.utils import add_prefix
++from torch import Tensor
++
++logger = logging.getLogger(__name__)
++
++
++# Adapted from OpenAI Whisper: https://github.com/openai/whisper
++# MIT License
++#
++# Copyright (c) 2022 OpenAI
++#
++# Permission is hereby granted, free of charge, to any person obtaining a copy
++# of this software and associated documentation files (the "Software"), to deal
++# in the Software without restriction, including without limitation the rights
++# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++# copies of the Software, and to permit persons to whom the Software is
++# furnished to do so, subject to the following conditions:
++#
++# The above copyright notice and this permission notice shall be included in all
++# copies or substantial portions of the Software.
++#
++# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++# SOFTWARE.
++
++
++class _WhisperLayerNorm(nn.LayerNorm):
++    def forward(self, x: Tensor) -> Tensor:
++        return super().forward(x.float()).to(dtype=x.dtype)
++
++
++class _WhisperLinear(nn.Linear):
++    def forward(self, x: Tensor) -> Tensor:
++        return F.linear(
++            x,
++            self.weight.to(dtype=x.dtype),
++            None if self.bias is None else self.bias.to(dtype=x.dtype),
++        )
++
++
++class _WhisperConv1d(nn.Conv1d):
++    def _conv_forward(self, x: Tensor, weight: Tensor, bias: Tensor | None) -> Tensor:
++        return super()._conv_forward(
++            x,
++            weight.to(dtype=x.dtype),
++            None if bias is None else bias.to(dtype=x.dtype),
++        )
++
++
++def _sinusoids(length: int, channels: int, max_timescale: int = 10000) -> Tensor:
++    assert channels % 2 == 0
++    log_timescale_increment = math.log(max_timescale) / (channels // 2 - 1)
++    inv_timescales = torch.exp(-log_timescale_increment * torch.arange(channels // 2))
++    scaled_time = torch.arange(length)[:, None] * inv_timescales[None, :]
++    return torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim=1)
++
++
++class _WhisperMultiHeadAttention(nn.Module):
++    def __init__(self, n_state: int, n_head: int):
++        super().__init__()
++        self.n_head = n_head
++        self.query = _WhisperLinear(n_state, n_state)
++        self.key = _WhisperLinear(n_state, n_state, bias=False)
++        self.value = _WhisperLinear(n_state, n_state)
++        self.out = _WhisperLinear(n_state, n_state)
++
++    def forward(self, x: Tensor) -> Tensor:
++        batch_size, sequence_length, n_state = x.shape
++        head_dim = n_state // self.n_head
++        q = self.query(x).view(batch_size, sequence_length, self.n_head, head_dim)
++        k = self.key(x).view(batch_size, sequence_length, self.n_head, head_dim)
++        v = self.value(x).view(batch_size, sequence_length, self.n_head, head_dim)
++        q = q.permute(0, 2, 1, 3)
++        k = k.permute(0, 2, 1, 3)
++        v = v.permute(0, 2, 1, 3)
++        x = F.scaled_dot_product_attention(q, k, v)
++        x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
++        return self.out(x)
++
++
++class _WhisperResidualAttentionBlock(nn.Module):
++    def __init__(self, n_state: int, n_head: int):
++        super().__init__()
++        self.attn = _WhisperMultiHeadAttention(n_state, n_head)
++        self.attn_ln = _WhisperLayerNorm(n_state)
++        self.mlp = nn.Sequential(
++            _WhisperLinear(n_state, n_state * 4),
++            nn.GELU(),
++            _WhisperLinear(n_state * 4, n_state),
++        )
++        self.mlp_ln = _WhisperLayerNorm(n_state)
++
++    def forward(self, x: Tensor) -> Tensor:
++        x = x + self.attn(self.attn_ln(x))
++        return x + self.mlp(self.mlp_ln(x))
++
++
++class WhisperAudioEncoder(nn.Module):
++    """Whisper encoder with Ming's variable-length ``[B, T, n_mels]`` input."""
++
++    def __init__(
++        self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int
++    ):
++        super().__init__()
++        self.conv1 = _WhisperConv1d(n_mels, n_state, kernel_size=3, padding=1)
++        self.conv2 = _WhisperConv1d(
++            n_state, n_state, kernel_size=3, stride=2, padding=1
++        )
++        self.register_buffer("positional_embedding", _sinusoids(n_ctx, n_state))
++        self.blocks = nn.ModuleList(
++            [_WhisperResidualAttentionBlock(n_state, n_head) for _ in range(n_layer)]
++        )
++        self.ln_post = _WhisperLayerNorm(n_state)
++        self.audio_emb_dim = n_state
++
++    def forward(self, x: Tensor) -> Tensor:
++        """Encode a batch of mel spectrograms shaped ``[batch, frames, mels]``."""
++        x = x.transpose(1, 2)
++        x = F.gelu(self.conv1(x))
++        x = F.gelu(self.conv2(x))
++        x = x.permute(0, 2, 1)
++        positional_embedding = self.positional_embedding[: x.shape[1], :]
++        assert x.shape[1:] == positional_embedding.shape, "incorrect audio shape"
++        x = (x + positional_embedding).to(dtype=x.dtype)
++
++        for block in self.blocks:
++            x = block(x)
++
++        return self.ln_post(x)
++
++
++class _Transpose(nn.Module):
++    def __init__(self, dim0: int, dim1: int):
++        super().__init__()
++        self.dim0 = dim0
++        self.dim1 = dim1
++
++    def forward(self, value: torch.Tensor) -> torch.Tensor:
++        return value.transpose(self.dim0, self.dim1)
++
++
++def _audio_downsampler_config(audio_config) -> tuple[list[int], list[int], list[int]]:
++    spec = MingAudioSpec.from_config(audio_config)
++    return list(spec.kernels), list(spec.strides), list(spec.paddings)
++
++
++def _pad_audio_features(
++    items: list[MultimodalDataItem],
++) -> tuple[torch.Tensor, torch.Tensor]:
++    """Recover individual raw-mel clips from processor-owned audio items."""
++    clips = []
++    lengths = []
++    for item in items:
++        raw_lengths = getattr(item, "audio_mel_lengths", None)
++        metadata = getattr(item, "ming_audio", None)
++        if metadata is not None:
++            metadata = MingAudioMetadata.from_dict(metadata)
++            if (
++                raw_lengths is not None
++                and tuple(torch.as_tensor(raw_lengths).flatten().tolist())
++                != metadata.mel_lengths
++            ):
++                raise ValueError(
++                    "Ming metadata disagrees with legacy audio_mel_lengths"
++                )
++            raw_lengths = metadata.mel_lengths
++        if raw_lengths is None:
++            raise ValueError("Bailing audio items require audio_mel_lengths")
++        raw_lengths = torch.as_tensor(raw_lengths, dtype=torch.long).flatten().cpu()
++        if raw_lengths.numel() == 0 or torch.any(raw_lengths <= 0):
++            raise ValueError("audio_mel_lengths must contain positive lengths")
++        feature = item.feature
++        if not isinstance(feature, torch.Tensor) or feature.ndim != 3:
++            raise ValueError(
++                "Bailing audio features must have shape [batch, frames, mels]"
++            )
++        if feature.shape[0] == raw_lengths.numel():
++            rows = list(feature)
++        elif feature.shape[0] == 1 and feature.shape[1] == int(raw_lengths.sum()):
++            starts = torch.cat(
++                [torch.zeros(1, dtype=torch.long), raw_lengths.cumsum(0)[:-1]]
++            )
++            rows = [
++                feature[0, int(start) : int(start + length)]
++                for start, length in zip(starts, raw_lengths)
++            ]
++        else:
++            raise ValueError(
++                "Cannot align Bailing audio feature rows with audio_mel_lengths"
++            )
++        for row, length in zip(rows, raw_lengths):
++            length = int(length)
++            if length > row.shape[0]:
++                raise ValueError("audio_mel_lengths exceeds audio feature length")
++            clips.append(row[:length])
++            lengths.append(length)
++    return torch.nn.utils.rnn.pad_sequence(clips, batch_first=True), torch.tensor(
++        lengths, dtype=torch.long
++    )
++
++
++class BailingMoeV3AudioForConditionalGeneration(nn.Module):
++    """Ming V3 runtime with local audio encoding, projection, and weight mapping."""
++
++    @staticmethod
++    def shared_experts_fusion_disable_reason(hf_config, quant_config):
++        return BailingMoeV3ForCausalLM.shared_experts_fusion_disable_reason(
++            hf_config.llm_config, quant_config
++        )
++
++    @classmethod
++    def get_model_config_for_expert_location(cls, config):
++        return BailingMoeV3ForCausalLM.get_model_config_for_expert_location(
++            config.llm_config
++        )
++
++    def __init__(
++        self,
++        config: BailingMoeV3AudioConfig,
++        quant_config: Optional[QuantizationConfig] = None,
++        prefix: str = "",
++    ) -> None:
++        super().__init__()
++        self.config = config
++        self.pp_group = get_parallel().pp_group
++        self.model = BailingMoeV3ForCausalLM(
++            config=config.llm_config,
++            quant_config=quant_config,
++            prefix=add_prefix("model", prefix),
++        )
++        self.pattern = MultiModalityDataPaddingPatternMultimodalTokens()
++
++        self.audio = None
++        self.linear_proj_audio = None
++        if config.audio_config is not None:
++            with set_default_torch_dtype(torch.float32):
++                self.audio = WhisperAudioEncoder(
++                    **config.audio_config.whisper_encoder_config
++                )
++            self.linear_proj_audio = self._build_audio_projector()
++
++    def _build_audio_projector(self) -> nn.Sequential:
++        assert self.audio is not None
++        kernels, strides, paddings = _audio_downsampler_config(self.config.audio_config)
++        hidden_size = self.config.llm_config.hidden_size
++        modules: list[nn.Module] = []
++        input_size = self.audio.audio_emb_dim
++        for kernel, stride, padding in zip(kernels, strides, paddings):
++            modules.extend(
++                [
++                    nn.Conv1d(input_size, hidden_size, kernel, stride, padding),
++                    nn.GELU(),
++                ]
++            )
++            input_size = hidden_size
++        modules.extend([_Transpose(-1, -2), nn.Linear(hidden_size, hidden_size)])
++        for _ in range(2, self.config.mlp_depth):
++            modules.extend([nn.GELU(), nn.Linear(hidden_size, hidden_size)])
++        return nn.Sequential(*modules)
++
++    def get_input_embeddings(self):
++        return self.model.get_input_embeddings()
++
++    def pad_input_ids(self, input_ids: list[int], mm_inputs: MultimodalInputs):
++        return self.pattern.pad_input_tokens(input_ids, mm_inputs)
++
++    def _audio_embedding_lengths(self, mel_lengths: torch.Tensor) -> torch.Tensor:
++        return MingAudioSpec.from_config(self.config.audio_config).embedding_length(
++            mel_lengths
++        )
++
++    def get_audio_feature(self, items: list[MultimodalDataItem]) -> torch.Tensor:
++        if self.audio is None or self.linear_proj_audio is None:
++            raise ValueError("Audio encoder is not initialized")
++        features, mel_lengths = _pad_audio_features(items)
++        chunks = []
++        spec = MingAudioSpec.from_config(self.config.audio_config)
++        for item in items:
++            metadata = getattr(item, "ming_audio", None)
++            if metadata is not None:
++                metadata = MingAudioMetadata.from_dict(metadata)
++                expected = tuple(spec.token_count(n) for n in metadata.mel_lengths)
++                if metadata.token_lengths != expected:
++                    raise ValueError(
++                        "Ming audio token length plan disagrees with model geometry"
++                    )
++        for feature, length in zip(features, mel_lengths):
++            chunks.extend(feature[: int(length)].split(spec.chunk_frames))
++        # Encode each chunk with a fixed batch shape. Besides padded attention,
++        # real BF16 weights are sensitive to GEMM kernels selected by batch size.
++        # A request must not change its embeddings when unrelated clips arrive.
++        outputs = []
++        for chunk in chunks:
++            encoded = self.audio(chunk.unsqueeze(0))
++            projected = self.linear_proj_audio(encoded.transpose(-1, -2))[0]
++            if projected.shape[0] != spec.embedding_length(chunk.shape[0]):
++                raise ValueError("Audio projector output violates the length contract")
++            outputs.append(projected)
++        return F.normalize(torch.cat(outputs), dim=-1).to(dtype=features.dtype)
++
++    @torch.no_grad()
++    def forward(
++        self,
++        input_ids: torch.Tensor,
++        positions: torch.Tensor,
++        forward_batch: ForwardBatch,
++        input_embeds: Optional[torch.Tensor] = None,
++        get_embedding: bool = False,
++        pp_proxy_tensors: Optional[PPProxyTensors] = None,
++    ) -> torch.Tensor:
++        if "mrope_section" in self.config.llm_config.rope_parameters:
++            positions = forward_batch.mrope_positions
++
++        return general_mm_embed_routine(
++            input_ids=input_ids,
++            forward_batch=forward_batch,
++            language_model=self.model,
++            multimodal_model=self,
++            data_embedding_funcs={
++                Modality.AUDIO: self.get_audio_feature,
++            },
++            positions=positions,
++            pp_proxy_tensors=pp_proxy_tensors,
++        )
++
++    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
++        """Dispatch checkpoint tensors once without retaining the weight stream."""
++        params = dict(self.named_parameters(remove_duplicate=False))
++        buffers = dict(self.named_buffers())
++        loaded = set()
++        prefixes = ("audio.", "linear_proj_audio.")
++        ignored_visual = []
++
++        def language_weights():
++            for checkpoint_name, weight in weights:
++                name = checkpoint_name.removeprefix("model.")
++                if name.startswith(("visual.", "linear_proj.")):
++                    ignored_visual.append(checkpoint_name)
++                    continue
++                if name.startswith(prefixes):
++                    name = name.replace("attn.qkv.", "attn.qkv_proj.")
++                    if name in params:
++                        loader = getattr(
++                            params[name], "weight_loader", default_weight_loader
++                        )
++                        loader(params[name], weight)
++                    elif name in buffers:
++                        if buffers[name].shape != weight.shape:
++                            raise ValueError(f"Shape mismatch for {checkpoint_name}")
++                        buffers[name].copy_(weight)
++                    else:
++                        raise ValueError(
++                            f"Unexpected multimodal weight: {checkpoint_name}"
++                        )
++                    loaded.add(name)
++                elif (
++                    checkpoint_name.startswith("model.")
++                    or checkpoint_name == "lm_head.weight"
++                ):
++                    yield checkpoint_name.replace("model.model.", "model.", 1), weight
++
++        language_loaded = self.model.load_weights(language_weights())
++        self.ignored_visual_weight_names = tuple(ignored_visual)
++        if ignored_visual:
++            logger.info(
++                "Audio-only Ming skipped %d legacy vision tensors", len(ignored_visual)
++            )
++        required_audio = {
++            name
++            for name in (*params, *buffers)
++            if name.startswith(("audio.", "linear_proj_audio."))
++        }
++        missing = required_audio - loaded
++        if missing:
++            raise ValueError(f"Missing audio checkpoint weights: {sorted(missing)}")
++        # Match the shared VL runtime's guard: missing routing tensors can
++        # otherwise leave random expert selection after a successful startup.
++        # Inspect only parameters present on this pipeline rank.
++        required_router = {
++            name
++            for name, _ in self.model.named_parameters()
++            if name.endswith((".mlp.gate.weight", ".mlp.gate.expert_bias"))
++        }
++        missing_router = required_router - set(language_loaded or ())
++        if missing_router:
++            raise ValueError(
++                f"Missing audio language router weights: {sorted(missing_router)}"
++            )
++        loaded.update(f"model.{name}" for name in (language_loaded or ()))
++        return loaded
++
++
++EntryClass = [BailingMoeV3AudioForConditionalGeneration]
+diff --git a/python/sglang/srt/models/bailing_moe_v3.py b/python/sglang/srt/models/bailing_moe_v3.py
+index 23a0729a50..761248585c 100644
+--- a/python/sglang/srt/models/bailing_moe_v3.py
++++ b/python/sglang/srt/models/bailing_moe_v3.py
+@@ -68,6 +68,7 @@ from sglang.srt.layers.quantization.int8_utils import (
+ )
+ from sglang.srt.layers.radix_attention import RadixAttention
+ from sglang.srt.layers.rotary_embedding import get_rope
++from sglang.srt.layers.rotary_embedding.bailing_mrope import BailingMlaRotaryEmbedding
+ from sglang.srt.layers.utils import PPMissingLayer
+ from sglang.srt.layers.vocab_parallel_embedding import (
+     ParallelLMHead,
+@@ -104,6 +105,34 @@ from sglang.srt.utils import (
+ _is_fp8_fnuz = is_fp8_fnuz()
+ 
+ 
++def _resolve_optional_dtype(value, field_name: str) -> Optional[torch.dtype]:
++    """Resolve a JSON-friendly dtype name without silently accepting bad values."""
++    if value is None or isinstance(value, torch.dtype):
++        return value
++    dtype = getattr(torch, str(value), None)
++    if not isinstance(dtype, torch.dtype):
++        raise ValueError(
++            f"{field_name} must be a torch dtype or dtype name, got {value!r}"
++        )
++    return dtype
++
++
++def _get_lm_head_params_dtype(config) -> torch.dtype:
++    # Keep the generic Bailing V3 path unchanged. Ming audio checkpoints opt in
++    # through their composite config to preserve the old checked-out runtime.
++    return _resolve_optional_dtype(
++        getattr(config, "lm_head_params_dtype", torch.bfloat16),
++        "lm_head_params_dtype",
++    )
++
++
++def _get_lm_head_input_dtype(config) -> Optional[torch.dtype]:
++    """Return the optional dtype used for hidden states passed to the LM head."""
++    return _resolve_optional_dtype(
++        getattr(config, "lm_head_input_dtype", None), "lm_head_input_dtype"
++    )
++
++
+ def _get_awq_dequantize():
+     """Load the platform AWQ kernel only when an AWQ tensor needs it."""
+     if _is_cuda:
+@@ -193,16 +222,27 @@ class DsV3MLA(DeepseekV2AttentionMLA):
+         else:
+             self.g_proj = None
+ 
+-        if "mrope_section" in rope_scaling and rope_scaling.get("video_rope", False):
++        # The DeepSeek parent selects YaRN; Bailing's sectioned rotary applies
++        # to audio/text as well as vision, with the factory choosing the kernel.
++        if rope_scaling and "mrope_section" in rope_scaling:
+             rope_scaling["rope_type"] = "default"
+-            self.rotary_emb = get_rope(
+-                qk_rope_head_dim,
+-                rotary_dim=qk_rope_head_dim,
+-                max_position=max_position_embeddings,
+-                base=rope_theta,
+-                rope_scaling=rope_scaling,
+-                is_neox_style=not getattr(config, "rope_interleave", True),
+-            )
++            if rope_scaling.get("video_rope", False):
++                self.rotary_emb = get_rope(
++                    qk_rope_head_dim,
++                    rotary_dim=qk_rope_head_dim,
++                    max_position=max_position_embeddings,
++                    base=rope_theta,
++                    rope_scaling=rope_scaling,
++                    is_neox_style=not getattr(config, "rope_interleave", True),
++                )
++            else:
++                self.rotary_emb = BailingMlaRotaryEmbedding.get_cached(
++                    qk_rope_head_dim,
++                    max_position_embeddings,
++                    rope_theta,
++                    not getattr(config, "rope_interleave", True),
++                    rope_scaling,
++                )
+ 
+     def forward(
+         self,
+@@ -1444,10 +1484,7 @@ class BailingMoeV3ForCausalLM(nn.Module):
+                 else ParallelLMHead(
+                     config.vocab_size,
+                     config.hidden_size,
+-                    # bf16 lm_head (was fp32): fp32 vocab GEMM uses a slow sm80
+-                    # path on Hopper; logits are still cast to fp32 for sampling
+-                    # in the logits processor. Accuracy-neutral on ling-v3.
+-                    params_dtype=torch.bfloat16,
++                    params_dtype=_get_lm_head_params_dtype(config),
+                     quant_config=quant_config,
+                     use_attn_tp_group=get_parallel().enable_dp_lm_head,
+                 )
+@@ -1809,11 +1846,13 @@ class BailingMoeV3ForCausalLM(nn.Module):
+             aux_hidden_states = None
+             if self.capture_aux_hidden_states and isinstance(hidden_states, tuple):
+                 hidden_states, aux_hidden_states = hidden_states
++            lm_head_hidden_states = hidden_states
++            lm_head_input_dtype = _get_lm_head_input_dtype(self.config)
++            if lm_head_input_dtype is not None:
++                lm_head_hidden_states = lm_head_hidden_states.to(lm_head_input_dtype)
+             return self.logits_processor(
+                 input_ids,
+-                # keep hidden_states in bf16 so the lm_head matmul runs in bf16
+-                # (logits are cast to fp32 inside the logits processor)
+-                hidden_states,
++                lm_head_hidden_states,
+                 self.lm_head,
+                 forward_batch,
+                 aux_hidden_states=aux_hidden_states,
+diff --git a/python/sglang/srt/multimodal/assets/mel_filters.npz b/python/sglang/srt/multimodal/assets/mel_filters.npz
+new file mode 100644
+index 0000000000000000000000000000000000000000..28ea26909dbdfd608aef67afc4d74d7961ae4bb6
+GIT binary patch
+literal 4271
+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
+AQvd(}
+
+literal 0
+HcmV?d00001
+
+diff --git a/python/sglang/srt/multimodal/bailing_audio_io.py b/python/sglang/srt/multimodal/bailing_audio_io.py
+new file mode 100644
+index 0000000000..833784b181
+--- /dev/null
++++ b/python/sglang/srt/multimodal/bailing_audio_io.py
+@@ -0,0 +1,145 @@
++# Copyright 2025 SGLang Team
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++# ==============================================================================
++"""Native-rate decoding for Bailing's device-side audio preprocessing."""
++
++import io
++import logging
++import os
++from urllib.parse import unquote, urlparse
++
++import numpy as np
++import pybase64
++
++from sglang.srt.multimodal.audio_from_video import is_audio_container
++from sglang.srt.utils.common import download_remote_media
++from sglang.srt.utils.video_decoder import _BACKEND
++
++logger = logging.getLogger(__name__)
++_INVALID_CONTAINER = (
++    "Invalid input_audio: no decodable audio stream was found in the media container."
++)
++
++
++class _BailingAudioDecodeError(ValueError):
++    pass
++
++
++def _decode_native_container(source: bytes | str) -> tuple[np.ndarray, int]:
++    """Decode the first audio stream without resampling or downmixing."""
++    try:
++        import av
++
++        input_source = io.BytesIO(source) if isinstance(source, bytes) else source
++        with av.open(input_source) as container:
++            if not container.streams.audio:
++                raise _BailingAudioDecodeError(_INVALID_CONTAINER)
++            native_sr = None
++            resampler = None
++            chunks = []
++            skipped_packets = 0
++            first_decode_error = None
++            for packet in container.demux(container.streams.audio[0]):
++                try:
++                    for frame in packet.decode():
++                        if native_sr is None:
++                            native_sr = frame.sample_rate
++                            # Convert sample format only; preserve rate and channels.
++                            resampler = av.audio.resampler.AudioResampler(
++                                format="fltp", layout=frame.layout, rate=native_sr
++                            )
++                        elif frame.sample_rate != native_sr:
++                            raise _BailingAudioDecodeError(
++                                "Audio sample rate changed within the stream"
++                            )
++                        chunks.extend(
++                            item.to_ndarray().T for item in resampler.resample(frame)
++                        )
++                except av.error.FFmpegError as error:
++                    skipped_packets += 1
++                    if first_decode_error is None:
++                        first_decode_error = error
++            if resampler is not None:
++                chunks.extend(item.to_ndarray().T for item in resampler.resample(None))
++            if skipped_packets:
++                logger.warning(
++                    "Skipped %d undecodable audio packet(s); kept %d decoded "
++                    "chunk(s). First decode error: %s",
++                    skipped_packets,
++                    len(chunks),
++                    first_decode_error,
++                )
++    except _BailingAudioDecodeError:
++        raise
++    except Exception as error:
++        raise ValueError(_INVALID_CONTAINER) from error
++
++    if not chunks:
++        raise ValueError(_INVALID_CONTAINER) from first_decode_error
++    waveform = np.concatenate(chunks, axis=0)
++    if waveform.ndim != 2 or waveform.size == 0:
++        raise ValueError(_INVALID_CONTAINER)
++    return np.ascontiguousarray(waveform, dtype=np.float32), int(native_sr)
++
++
++def load_bailing_audio_native(audio_file: str | bytes) -> tuple[np.ndarray, int]:
++    """Return original-rate audio and its sample rate, preserving all channels.
++
++    Multi-channel arrays use (samples, channels), matching the shared loader.
++    Bailing's frontend owns the subsequent downmix and device-side resampling.
++    """
++    if isinstance(audio_file, bytes):
++        source = audio_file
++    elif isinstance(audio_file, str) and audio_file.startswith("data:"):
++        source = pybase64.b64decode(audio_file.split(",")[1], validate=True)
++    elif isinstance(audio_file, str) and audio_file.startswith(("http://", "https://")):
++        source = download_remote_media(
++            audio_file, timeout=int(os.getenv("REQUEST_TIMEOUT", "5"))
++        )
++    elif isinstance(audio_file, str) and audio_file.startswith("file://"):
++        source = unquote(urlparse(audio_file).path)
++    elif isinstance(audio_file, str):
++        source = audio_file
++    else:
++        raise ValueError(f"Invalid audio format: {audio_file}")
++
++    if isinstance(source, bytes):
++        header = source[:16]
++    else:
++        with open(source, "rb") as audio_stream:
++            header = audio_stream.read(16)
++    if is_audio_container(header):
++        return _decode_native_container(source)
++
++    if _BACKEND == "torchcodec":
++        from torchcodec.decoders import AudioDecoder
++
++        try:
++            decoder = AudioDecoder(source, sample_rate=None, num_channels=None)
++            samples = decoder.get_all_samples()
++            return samples.data.T.numpy(), int(samples.sample_rate)
++        except Exception as error:
++            logger.warning(
++                "torchcodec AudioDecoder failed (%s); falling back to soundfile.",
++                error,
++            )
++
++    import soundfile as sf
++
++    try:
++        audio, sample_rate = sf.read(
++            io.BytesIO(source) if isinstance(source, bytes) else source
++        )
++    except sf.LibsndfileError as error:
++        raise ValueError(f"Could not decode audio: {error}") from error
++    return audio, int(sample_rate)
+diff --git a/python/sglang/srt/multimodal/ming_audio.py b/python/sglang/srt/multimodal/ming_audio.py
+new file mode 100644
+index 0000000000..410a7f2f50
+--- /dev/null
++++ b/python/sglang/srt/multimodal/ming_audio.py
+@@ -0,0 +1,293 @@
++# Copyright 2026 SGLang Team
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""Ming audio preprocessing and clip geometry, shared by processor and encoder.
++
++Like MiMoAudioPipeline, this module owns waveform preparation, Mel extraction,
++and token-length rules. It has no scheduler or checkpoint-code dependency.
++"""
++
++from dataclasses import dataclass
++from functools import lru_cache
++from numbers import Integral
++from pathlib import Path
++from typing import Sequence
++
++import numpy as np
++import torch
++from torch import Tensor
++
++
++@dataclass(frozen=True)
++class MingAudioSpec:
++    """Immutable preprocessing and encoder/projector length contract.
++
++    ``chunk_frames`` is measured before the encoder's stride-two convolution.
++    Chunk output lengths must be rounded separately, including the final chunk.
++    """
++
++    n_mels: int = 128
++    sample_rate: int = 16000
++    n_fft: int = 400
++    hop_length: int = 160
++    chunk_frames: int = 3000
++    kernels: tuple[int, ...] = (3,)
++    strides: tuple[int, ...] = (2,)
++    paddings: tuple[int, ...] = (1,)
++
++    def __post_init__(self):
++        if self.n_mels not in (80, 128):
++            raise ValueError("Ming audio requires 80 or 128 mel bins")
++        if (self.sample_rate, self.n_fft, self.hop_length) != (16000, 400, 160):
++            raise ValueError("Ming checkpoints require the 16 kHz Whisper frontend")
++        if self.chunk_frames <= 0:
++            raise ValueError("chunk_frames must be positive")
++        if not (len(self.kernels) == len(self.strides) == len(self.paddings)):
++            raise ValueError(
++                "audio downsampler kernel/stride/padding lists "
++                "must have the same length"
++            )
++        if any(k <= 0 for k in self.kernels) or any(s <= 0 for s in self.strides):
++            raise ValueError("audio downsampler kernels and strides must be positive")
++        if any(p < 0 for p in self.paddings):
++            raise ValueError("audio downsampler paddings must be nonnegative")
++
++    @classmethod
++    def from_config(cls, config):
++        def get(name, default=None):
++            return (
++                config.get(name, default)
++                if isinstance(config, dict)
++                else getattr(config, name, default)
++            )
++
++        encoder = get("whisper_encoder_config") or {}
++        kernels = tuple(
++            get("downsampler_kernel_size_list") or [get("ds_kernel_size", 3)]
++        )
++        strides = tuple(get("downsampler_stride_list") or [get("ds_stride", 2)])
++        paddings = get("downsampler_padding_list")
++        spec = cls(
++            n_mels=encoder.get("n_mels", get("n_mels", 128)),
++            chunk_frames=get("chunk_frames", 3000),
++            kernels=kernels,
++            strides=strides,
++            paddings=tuple(
++                paddings if paddings is not None else [k // 2 for k in kernels]
++            ),
++        )
++        context = encoder.get("n_ctx", get("n_audio_ctx", 3000))
++        if (spec.chunk_frames + 1) // 2 > context:
++            raise ValueError("audio chunk exceeds encoder positional context")
++        return spec
++
++    def embedding_length(self, mel_length):
++        """Length of one chunk; accepts an integer or an integer tensor."""
++        length = (mel_length + 1) // 2
++        for kernel, stride, padding in zip(self.kernels, self.strides, self.paddings):
++            length = (length + 2 * padding - kernel) // stride + 1
++        return length
++
++    def chunks(self, mel_length: int) -> tuple[int, ...]:
++        if mel_length <= 0:
++            raise ValueError("audio mel length must be positive")
++        full, remainder = divmod(mel_length, self.chunk_frames)
++        return (self.chunk_frames,) * full + ((remainder,) if remainder else ())
++
++    def token_count(self, mel_length: int) -> int:
++        lengths = [self.embedding_length(n) for n in self.chunks(mel_length)]
++        if any(n <= 0 for n in lengths):
++            raise ValueError("audio chunk is too short for the configured downsampler")
++        return sum(lengths)
++
++
++@dataclass(frozen=True)
++class MingAudioMetadata:
++    """Versioned model metadata transported opaquely by the generic engine."""
++
++    mel_lengths: tuple[int, ...]
++    token_lengths: tuple[int, ...]
++    version: int = 1
++
++    def __post_init__(self):
++        if self.version != 1:
++            raise ValueError(f"Unsupported Ming audio metadata version: {self.version}")
++        if not self.mel_lengths or len(self.mel_lengths) != len(self.token_lengths):
++            raise ValueError("Ming audio metadata must describe each clip")
++        if any(n <= 0 for n in (*self.mel_lengths, *self.token_lengths)):
++            raise ValueError("Ming audio lengths must be positive")
++
++    def to_dict(self):
++        return {
++            "version": self.version,
++            "mel_lengths": list(self.mel_lengths),
++            "token_lengths": list(self.token_lengths),
++        }
++
++    @classmethod
++    def from_dict(cls, value):
++        return cls(
++            tuple(value["mel_lengths"]), tuple(value["token_lengths"]), value["version"]
++        )
++
++
++# Vendored from OpenAI Whisper's MIT-licensed assets.  Checkpoint parity is
++# bit-sensitive: rebuilding these filters from the published formula differs
++# by 1 ULP in a few float32 entries and can flip a BF16 mel value.
++_WHISPER_MEL_FILTERS_PATH = Path(__file__).parent / "assets" / "mel_filters.npz"
++
++
++@lru_cache(maxsize=2)
++def _whisper_mel_filters(n_mels: int) -> Tensor:
++    """Load OpenAI Whisper's exact 16 kHz mel filter bank."""
++    if n_mels not in (80, 128):
++        raise ValueError(f"Whisper-compatible n_mels must be 80 or 128, got {n_mels}")
++
++    with np.load(_WHISPER_MEL_FILTERS_PATH) as filters_file:
++        return torch.from_numpy(filters_file[f"mel_{n_mels}"]).float()
++
++
++class BailingAudioFrontend:
++    """Waveform normalization, Whisper-compatible log-mel, and length helpers."""
++
++    sample_rate = 16000
++    n_fft = 400
++    hop_length = 160
++
++    def __init__(
++        self,
++        n_mels: int = 128,
++        *,
++        device: str | torch.device | None = None,
++        resample_device: str | torch.device | None = None,
++    ):
++        self.n_mels = n_mels
++        # None preserves the caller's device. Constructing a frontend must not
++        # initialize CUDA before the processor's decoding workers are started.
++        self.device = torch.device(device) if device is not None else None
++        self._spectral_constants = None
++        self.resample_device = (
++            torch.device(resample_device) if resample_device is not None else None
++        )
++        self._resampler = None
++        _whisper_mel_filters(n_mels)
++
++    def prepare_waveform(self, waveform: Tensor, sample_rate: int) -> Tensor:
++        """Resample and downmix a waveform to contiguous mono float32 samples."""
++        if waveform.ndim not in (1, 2):
++            raise ValueError(
++                "waveform must have shape [samples] or [channels, samples], "
++                f"got {tuple(waveform.shape)}"
++            )
++        if waveform.numel() == 0:
++            raise ValueError("waveform must not be empty")
++        if (
++            not isinstance(sample_rate, Integral)
++            or isinstance(sample_rate, bool)
++            or sample_rate <= 0
++        ):
++            raise ValueError(f"sample_rate must be positive, got {sample_rate}")
++        if waveform.is_complex() or not torch.isfinite(waveform).all():
++            raise ValueError("waveform must contain finite real samples")
++
++        waveform = waveform.float()
++        if waveform.ndim == 2:
++            waveform = waveform.mean(dim=0)
++        if sample_rate != self.sample_rate:
++            import torchaudio
++
++            if self.resample_device is None:
++                waveform = torchaudio.functional.resample(
++                    waveform, sample_rate, self.sample_rate
++                )
++            else:
++                waveform = waveform.to(self.resample_device)
++                resampler = self._resampler
++                if resampler is None or resampler.orig_freq != sample_rate:
++                    # Match the float32 CPU kernel construction, then reuse it
++                    # on the selected device. Retain only the most recent rate.
++                    resampler = torchaudio.transforms.Resample(
++                        sample_rate, self.sample_rate, dtype=torch.float32
++                    ).to(self.resample_device)
++                    self._resampler = resampler
++                waveform = resampler(waveform)
++        return waveform.contiguous()
++
++    def waveform_to_mel(
++        self, waveform: Tensor, output_dtype: torch.dtype = torch.bfloat16
++    ) -> Tensor:
++        """Return Bailing's ``[1, frames, n_mels]`` Whisper-compatible log-mel."""
++        if waveform.ndim != 1:
++            raise ValueError(
++                f"waveform must have shape [samples], got {tuple(waveform.shape)}"
++            )
++        if waveform.numel() == 0:
++            raise ValueError("waveform must not be empty")
++        if waveform.is_complex() or not torch.isfinite(waveform).all():
++            raise ValueError("waveform must contain finite real samples")
++        if waveform.numel() <= self.n_fft // 2:
++            raise ValueError(
++                "waveform is too short for Whisper reflect padding "
++                "(need more than 200 samples)"
++            )
++
++        # Preserve the target processor's explicit, service-owned device
++        # contract. The production processor always chooses the target device;
++        # absent a choice, retain the input device rather than reading a
++        # process-global current CUDA ordinal.
++        output_device = self.device if self.device is not None else waveform.device
++        waveform = waveform.to(device=output_device, dtype=torch.float32)
++
++        # Whisper's reference builds the window on CPU and then moves it to
++        # the selected device. Generating it directly on CUDA differs by a few
++        # ULP and can flip a rounded BF16 mel value. Cache the small immutable
++        # CPU constants; move them per call without retaining request samples.
++        if self._spectral_constants is None:
++            self._spectral_constants = (
++                torch.hann_window(self.n_fft, dtype=torch.float32),
++                _whisper_mel_filters(self.n_mels),
++            )
++        cpu_window, cpu_filters = self._spectral_constants
++        window = cpu_window.to(device=waveform.device, dtype=torch.float32)
++        filters = cpu_filters.to(device=waveform.device, dtype=torch.float32)
++        stft = torch.stft(
++            waveform,
++            self.n_fft,
++            self.hop_length,
++            window=window,
++            return_complex=True,
++        )
++        magnitudes = stft[..., :-1].abs().square()
++        mel = filters @ magnitudes
++        log_mel = torch.clamp(mel, min=1e-10).log10()
++        log_mel = torch.maximum(log_mel, log_mel.max() - 8.0)
++        return (
++            ((log_mel + 4.0) / 4.0)
++            .transpose(0, 1)
++            .unsqueeze(0)
++            .to(device=output_device, dtype=output_dtype)
++        )
++
++    @staticmethod
++    def audio_patch_length(
++        mel_length: int,
++        kernel_sizes: Sequence[int],
++        strides: Sequence[int],
++        paddings: Sequence[int],
++    ) -> int:
++        """Compute Bailing audio patch count after the encoder and downsampler."""
++        spec = MingAudioSpec(
++            kernels=tuple(kernel_sizes),
++            strides=tuple(strides),
++            paddings=tuple(paddings),
++        )
++        return spec.token_count(mel_length)
+diff --git a/python/sglang/srt/multimodal/processors/bailing_audio.py b/python/sglang/srt/multimodal/processors/bailing_audio.py
+new file mode 100644
+index 0000000000..66c6be9c9e
+--- /dev/null
++++ b/python/sglang/srt/multimodal/processors/bailing_audio.py
+@@ -0,0 +1,353 @@
++"""Local Bailing audio prompt and feature integration."""
++
++import re
++from typing import Iterable, Sequence
++
++import torch
++from sglang.srt.managers.schedule_batch import (
++    Modality,
++    MultimodalDataItem,
++    MultimodalProcessorOutput,
++)
++from sglang.srt.models.bailing_audio_v3 import (
++    BailingMoeV3AudioForConditionalGeneration,
++)
++from sglang.srt.multimodal.bailing_audio_io import load_bailing_audio_native
++from sglang.srt.multimodal.ming_audio import (
++    BailingAudioFrontend,
++    MingAudioMetadata,
++    MingAudioSpec,
++)
++from sglang.srt.multimodal.processors.base_processor import (
++    BaseMultimodalProcessor,
++    MultimodalSpecialTokens,
++)
++from sglang.srt.runtime_context import get_device
++from sglang.srt.utils.common import CLIENT_MEDIA_EXCEPTIONS
++
++_AUDIO_FORMS = (
++    ("<audio>", "<audioPatch>", "</audio>"),
++    ("<|audio_start|>", "<|audio_pad|>", "<|audio_end|>"),
++)
++_AUDIO_PLACEHOLDER = "<AUDIO>"
++
++
++def audio_frontend_device(server_args, *, gpu_enabled=True) -> torch.device:
++    """Resolve the selected frontend device within this service."""
++    if not gpu_enabled:
++        return torch.device("cpu")
++    # Raw ServerArgs.device can remain None after auto-detection; the runtime
++    # publishes the resolved backend separately from the construction record.
++    if get_device().device != "cuda" or not torch.cuda.is_available():
++        raise ValueError("GPU audio preprocessing requires a CUDA service")
++    return torch.device("cuda", server_args.base_gpu_id)
++
++
++def normalize_bailing_audio_placeholders(input_text: str, *, has_audios: bool) -> str:
++    """Map supported Bailing audio placeholders to one local marker."""
++    if not has_audios:
++        return input_text
++    for start, patch, end in _AUDIO_FORMS:
++        input_text = re.sub(
++            re.escape(start) + f"(?:{re.escape(patch)})+" + re.escape(end),
++            _AUDIO_PLACEHOLDER,
++            input_text,
++        )
++    return input_text
++
++
++def get_bailing_audio_downsampler_config(
++    audio_config,
++) -> tuple[list[int], list[int], list[int]]:
++    """Read Bailing's list-based downsampler config with scalar fallbacks."""
++    spec = MingAudioSpec.from_config(audio_config)
++    return list(spec.kernels), list(spec.strides), list(spec.paddings)
++
++
++class BailingAudioProcessor:
++    """Own local Bailing audio placeholder expansion and MM output creation."""
++
++    def __init__(self, tokenizer, audio_config):
++        self.tokenizer = tokenizer
++        self.audio_config = audio_config
++        self.spec = MingAudioSpec.from_config(audio_config)
++        self.audio_patch_token, self.audio_token_id = self._resolve_audio_patch_token()
++        self.audio_start_token, _, self.audio_end_token = next(
++            form for form in _AUDIO_FORMS if form[1] == self.audio_patch_token
++        )
++        self.downsampler_config = get_bailing_audio_downsampler_config(audio_config)
++
++    def _resolve_audio_patch_token(self) -> tuple[str, int]:
++        unk_token_id = getattr(self.tokenizer, "unk_token_id", None)
++        for _, token, _ in _AUDIO_FORMS:
++            token_id = self.tokenizer.convert_tokens_to_ids(token)
++            if token_id is not None and token_id != unk_token_id:
++                return token, int(token_id)
++        raise ValueError("tokenizer missing required Bailing audio patch token")
++
++    def prepare_audio_features(
++        self,
++        audios: Iterable[tuple[torch.Tensor, int]],
++        frontend: BailingAudioFrontend,
++    ) -> list[torch.Tensor]:
++        """Convert decoded waveforms into local Whisper-compatible mel features."""
++        return [
++            frontend.waveform_to_mel(frontend.prepare_waveform(waveform, sample_rate))
++            for waveform, sample_rate in audios
++        ]
++
++    def build_output(
++        self, input_text: str, audio_features: Sequence[torch.Tensor]
++    ) -> MultimodalProcessorOutput:
++        """Expand audio markers and construct the standard SGLang audio item."""
++        if not audio_features:
++            raise ValueError(
++                "Bailing audio processor requires at least one audio feature"
++            )
++
++        mel_lengths = []
++        for feature in audio_features:
++            if feature.ndim != 3 or feature.shape[0] != 1:
++                raise ValueError(
++                    "Bailing audio features must have shape [1, frames, n_mels], "
++                    f"got {tuple(feature.shape)}"
++                )
++            mel_lengths.append(int(feature.shape[1]))
++
++        patch_lengths = [self.spec.token_count(length) for length in mel_lengths]
++        input_text = normalize_bailing_audio_placeholders(input_text, has_audios=True)
++        placeholder_count = input_text.count(_AUDIO_PLACEHOLDER)
++        if placeholder_count != len(audio_features):
++            raise ValueError(
++                "Bailing audio input count does not match prompt placeholders: "
++                f"{len(audio_features)} audio inputs, {placeholder_count} placeholders"
++            )
++
++        expanded = input_text
++        for patch_length in patch_lengths:
++            replacement = (
++                self.audio_start_token
++                + self.audio_patch_token * patch_length
++                + self.audio_end_token
++            )
++            expanded = expanded.replace(_AUDIO_PLACEHOLDER, replacement, 1)
++        input_ids = self.tokenizer(expanded, return_tensors="pt").input_ids.flatten()
++        offsets = self._get_audio_offsets(input_ids, patch_lengths)
++
++        items = []
++        for feature, mel_length, patch_length, offset in zip(
++            audio_features, mel_lengths, patch_lengths, offsets
++        ):
++            # One clip per item matches the standard multimodal cache contract.
++            # Its feature byte length includes its raw length; no extra shared hash
++            # metadata is needed to distinguish different clip boundaries.
++            item = MultimodalDataItem(
++                modality=Modality.AUDIO, feature=feature, offsets=[offset]
++            )
++            item.audio_feature_lens = torch.tensor([[patch_length]], dtype=torch.long)
++            item.audio_mel_lengths = torch.tensor([mel_length], dtype=torch.long)
++            item.ming_audio = MingAudioMetadata(
++                (mel_length,), (patch_length,)
++            ).to_dict()
++            items.append(item)
++        # Bailing audio follows Qwen-style ASR M-RoPE: all three axes share
++        # the sequential token index. Keep delta at zero so decode positions
++        # continue normally after the expanded audio placeholder tokens.
++        mrope_positions = (
++            torch.arange(input_ids.numel(), dtype=torch.long)
++            .unsqueeze(0)
++            .expand(3, -1)
++            .clone()
++        )
++        return MultimodalProcessorOutput(
++            mm_items=items,
++            input_ids=input_ids.tolist(),
++            audio_token_id=self.audio_token_id,
++            mrope_positions=mrope_positions,
++            mrope_position_delta=torch.tensor([0], dtype=torch.long),
++        )
++
++    def _get_audio_offsets(
++        self, input_ids: torch.Tensor, patch_lengths: Sequence[int]
++    ) -> list[tuple[int, int]]:
++        mask = input_ids == self.audio_token_id
++        starts = (mask & ~torch.roll(mask, 1)).nonzero(as_tuple=True)[0]
++        ends = (mask & ~torch.roll(mask, -1)).nonzero(as_tuple=True)[0]
++        offsets = list(zip(starts.tolist(), ends.tolist()))
++        if len(offsets) != len(patch_lengths) or any(
++            end - start + 1 != length
++            for (start, end), length in zip(offsets, patch_lengths)
++        ):
++            raise ValueError(
++                "Bailing audio placeholder lengths do not match mel features"
++            )
++        return offsets
++
++
++class BailingMoeV3AudioMultimodalProcessor(BaseMultimodalProcessor):
++    """Local audio request adapter for the Ming/Bailing V3 runtime."""
++
++    models = [BailingMoeV3AudioForConditionalGeneration]
++    # Hash real features before IPC replaces them with transport proxies. The
++    # base finalizer also copies them to CPU when ordinary transport is selected.
++    precompute_hash_before_cpu_transfer = True
++    gpu_resample = False
++
++    @classmethod
++    def _load_single_item(
++        cls,
++        data,
++        modality,
++        frame_count_limit=None,
++        audio_sample_rate=None,
++        discard_alpha_channel=True,
++    ):
++        if (
++            modality != Modality.AUDIO
++            or audio_sample_rate is not None
++            or cls._is_preprocessed_input(data)
++        ):
++            return super()._load_single_item(
++                data,
++                modality,
++                frame_count_limit,
++                audio_sample_rate,
++                discard_alpha_channel,
++            )
++        # Only the Bailing GPU resampler needs native-rate, multichannel input.
++        # Keep the base loader's exception contract for malformed client media.
++        try:
++            return load_bailing_audio_native(data)
++        except CLIENT_MEDIA_EXCEPTIONS as error:
++            raise ValueError(f"Error while loading Bailing audio: {error}") from error
++        except Exception as error:
++            raise RuntimeError(f"Error while loading Bailing audio: {error}") from error
++
++    def __init__(self, hf_config, server_args, _processor, *args, **kwargs):
++        audio_config = getattr(hf_config, "audio_config", None)
++        if audio_config is None:
++            raise ValueError("Bailing Moe V3 requires an audio_config")
++        # The base constructor fingerprints enabled preprocessing caches.
++        # Prepare that state first; the frontend still allocates CUDA tensors
++        # lazily when audio is processed, not during construction.
++        options = (server_args.mm_process_config or {}).get("audio", {})
++        gpu_mel = options.get("gpu_mel", True)
++        self.gpu_resample = options.get("gpu_resample", True)
++        if not isinstance(gpu_mel, bool) or not isinstance(self.gpu_resample, bool):
++            raise ValueError("audio.gpu_mel and audio.gpu_resample must be booleans")
++        # Keep resampling and mel extraction independently configurable.
++        # Both paths are selected through the audio process options above.
++        self.frontend = BailingAudioFrontend(
++            n_mels=audio_config.whisper_encoder_config["n_mels"],
++            device=audio_frontend_device(server_args, gpu_enabled=gpu_mel),
++            resample_device=(
++                audio_frontend_device(server_args, gpu_enabled=True)
++                if self.gpu_resample
++                else None
++            ),
++        )
++        super().__init__(hf_config, server_args, _processor, *args, **kwargs)
++        self.bailing_audio_processor = BailingAudioProcessor(
++            self._tokenizer, audio_config
++        )
++        self.mm_tokens = MultimodalSpecialTokens(
++            audio_token=_AUDIO_PLACEHOLDER,
++            audio_token_id=self.bailing_audio_processor.audio_token_id,
++        ).build(_processor)
++        # Checkpoint-owned ASR contract. Flash emits ``language\ttranscript``;
++        # Tiny emits a plain transcript and must not use Flash's prompt.
++        self.asr_output_format = getattr(hf_config, "asr_output_format", "language_tab")
++        if self.asr_output_format not in ("plain", "language_tab"):
++            raise ValueError("Ming asr_output_format must be plain or language_tab")
++
++    def preprocess_fingerprint_payload(self):
++        payload = super().preprocess_fingerprint_payload()
++        payload["bailing_audio_frontend"] = {
++            "device": str(self.frontend.device),
++            "n_mels": self.frontend.n_mels,
++            "resample_device": str(self.frontend.resample_device),
++            "preserve_sample_rate": self.gpu_resample,
++            "resample_allow_tf32": (
++                torch.backends.cudnn.allow_tf32 if self.gpu_resample else None
++            ),
++            "matmul_precision": (
++                torch.get_float32_matmul_precision()
++                if self.frontend.device.type == "cuda"
++                else None
++            ),
++        }
++        return payload
++
++    def _build_transcription_prompt(self, input_text):
++        if isinstance(input_text, list):
++            input_text = self._tokenizer.decode(input_text) if input_text else ""
++        if input_text and input_text.strip():
++            return input_text
++        # ASR requests use the checkpoint's direct prompt, not the generic chat
++        # template. Tiny emits EOS under the Flash language-header prompt.
++        if self.asr_output_format == "plain":
++            return "Transcribe this speech.<AUDIO>"
++        return (
++            "Please recognize the language of this speech and transcribe it with "
++            "appropriate punctuation marks, placing a `\\t` between the identified "
++            "language and the transcribe.<AUDIO>"
++        )
++
++    async def process_mm_data_async(
++        self,
++        image_data=None,
++        video_data=None,
++        audio_data=None,
++        input_text=None,
++        **kwargs,
++    ):
++        if image_data or video_data:
++            raise ValueError(
++                "The local Bailing Moe V3 processor currently "
++                "accepts audio requests only"
++            )
++        if not audio_data:
++            return None
++
++        input_text = self._build_transcription_prompt(input_text)
++        if not isinstance(input_text, str):
++            raise TypeError(
++                "Bailing audio requests require string or tokenized input_text"
++            )
++        prompt = normalize_bailing_audio_placeholders(input_text, has_audios=True)
++        # The generic loader may discard surplus inputs on its legacy path.
++        # Validate the original request before loading can change its count.
++        placeholder_count = prompt.count(_AUDIO_PLACEHOLDER)
++        if placeholder_count != len(audio_data):
++            raise ValueError(
++                "Bailing audio input count does not match prompt placeholders: "
++                f"{len(audio_data)} audio inputs, {placeholder_count} placeholders"
++            )
++        base_output = await self.load_mm_data(
++            prompt=prompt,
++            audio_data=audio_data,
++            multimodal_tokens=self.mm_tokens,
++            audio_sample_rate=None if self.gpu_resample else self.frontend.sample_rate,
++        )
++        if base_output is None:
++            return None
++
++        if self.gpu_resample:
++            audios = [
++                (torch.as_tensor(waveform).movedim(-1, 0).contiguous(), sample_rate)
++                for waveform, sample_rate in base_output.audios
++            ]
++        else:
++            audios = [
++                (torch.as_tensor(audio), self.frontend.sample_rate)
++                for audio in base_output.audios
++            ]
++        audio_features = self.bailing_audio_processor.prepare_audio_features(
++            audios,
++            self.frontend,
++        )
++        output = self.bailing_audio_processor.build_output(
++            base_output.input_text, audio_features
++        )
++        output.mm_items = self._finalize_mm_items(output.mm_items, images=None)
++        return output
+diff --git a/python/sglang/srt/utils/hf_transformers/common.py b/python/sglang/srt/utils/hf_transformers/common.py
+index c6f94f3a4a..846d515b64 100644
+--- a/python/sglang/srt/utils/hf_transformers/common.py
++++ b/python/sglang/srt/utils/hf_transformers/common.py
+@@ -25,6 +25,7 @@ from sglang.srt.configs import (
+     AfmoeConfig,
+     BailingHybridConfig,
+     BailingMM2Config,
++    BailingMoeV3AudioConfig,
+     BailingMoeV3VLConfig,
+     ChatGLMConfig,
+     Cosmos3Config,
+@@ -117,6 +118,7 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
+         BailingHybridConfig,
+         BailingMM2Config,
+         BailingMoeV3VLConfig,
++        BailingMoeV3AudioConfig,
+         ChatGLMConfig,
+         DbrxConfig,
+         ExaoneConfig,
+diff --git a/test/registered/unit/multimodal/test_processor_async_call_sites.py b/test/registered/unit/multimodal/test_processor_async_call_sites.py
+index b1955fe722..47768ad8b3 100644
+--- a/test/registered/unit/multimodal/test_processor_async_call_sites.py
++++ b/test/registered/unit/multimodal/test_processor_async_call_sites.py
+@@ -166,6 +166,7 @@ _NO_WORKER_POOL_ROUTE = {
+     "minicpmv4_6.py",
+     "moss_vl.py",
+     "nano_nemotron_vl.py",
++    "bailing_audio.py",  # local Bailing audio frontend owns preprocessing
+     "voxtral.py",
+     "whisper.py",
+ }
+-- 
+2.43.0
+

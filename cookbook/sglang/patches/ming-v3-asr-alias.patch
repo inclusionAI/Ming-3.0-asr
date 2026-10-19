@@ -1,0 +1,26 @@
+--- a/python/sglang/srt/configs/bailing_audio_v3.py
++++ b/python/sglang/srt/configs/bailing_audio_v3.py
+@@ -171,6 +171,7 @@
+         if kwargs.get("architectures") in (
+             ["BailingMoeV3VLForConditionalGeneration"],
+             ["MingAudioV3ForConditionalGeneration"],
++            ["MingV3ASRForConditionalGeneration"],
+         ):
+             kwargs["architectures"] = ["BailingMoeV3AudioForConditionalGeneration"]
+         # Consume old mixed-checkpoint metadata without retaining visual components.
+--- a/python/sglang/srt/utils/hf_transformers/config.py
++++ b/python/sglang/srt/utils/hf_transformers/config.py
+@@ -132,6 +132,13 @@
+         config = _try_load_longcat_config(model, revision, **kwargs)
+         if config is None:
+             config = _try_load_raw_mamba_config(model, revision, **kwargs)
++        if config is None:
++            checkpoint_metadata, _ = PretrainedConfig.get_config_dict(
++                model, revision=revision, **kwargs
++            )
++            if checkpoint_metadata.get("model_type") == "ming_v3_asr":
++                from sglang.srt.configs.bailing_audio_v3 import BailingMoeV3AudioConfig
++                config = BailingMoeV3AudioConfig.from_dict(checkpoint_metadata)
+         if config is None:
+             config = AutoConfig.from_pretrained(
+                 model,

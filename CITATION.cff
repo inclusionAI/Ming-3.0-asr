@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use Ming-3.0-asr-tiny, please cite this model repository."
+title: "Ming-3.0-asr-tiny: Context-Aware Speech Recognition"
+type: software
+authors:
+  - name: inclusionAI
+license: MIT
+url: "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny"

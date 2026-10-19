@@ -1,0 +1,732 @@
+From bba862771a9e3413a062dad33e8b494ea9f7755b Mon Sep 17 00:00:00 2001
+From: Wang Zhaoyang <WZY_0524@163.com>
+Date: Fri, 16 Oct 2026 18:12:57 +0800
+Subject: [PATCH 2/2] [Model]: Fix Ming audio RoPE and typed config overrides
+
+---
+ python/sglang/srt/configs/bailing_audio_v3.py |  90 +++++-
+ python/sglang/srt/models/bailing_moe_v3.py    |  10 +
+ .../multimodal/processors/bailing_audio.py    |  15 +-
+ .../srt/utils/hf_transformers/config.py       |  22 +-
+ .../configs/test_bailing_audio_rope_config.py | 271 ++++++++++++++++++
+ .../models/test_bailing_audio_plain_rope.py   | 169 +++++++++++
+ .../test_bailing_audio_positions.py           |  34 +++
+ 7 files changed, 586 insertions(+), 25 deletions(-)
+ create mode 100644 test/registered/unit/configs/test_bailing_audio_rope_config.py
+ create mode 100644 test/registered/unit/models/test_bailing_audio_plain_rope.py
+ create mode 100644 test/registered/unit/multimodal/test_bailing_audio_positions.py
+
+diff --git a/python/sglang/srt/configs/bailing_audio_v3.py b/python/sglang/srt/configs/bailing_audio_v3.py
+index ade4f40ed0..ae9e28b91d 100644
+--- a/python/sglang/srt/configs/bailing_audio_v3.py
++++ b/python/sglang/srt/configs/bailing_audio_v3.py
+@@ -1,5 +1,7 @@
+ """Local audio/text configuration for Ming-ASR-Tiny checkpoints."""
+ 
++import copy
++
+ from transformers import AutoConfig, PretrainedConfig
+ 
+ from sglang.srt.configs.bailing_hybrid import BailingHybridConfig
+@@ -78,6 +80,84 @@ class BailingMoeV3AudioConfig(PretrainedConfig):
+         "audio_config": BailingWhisperAudioConfig,
+     }
+ 
++    def update(self, config_dict):
++        """Apply Audio language overrides without replacing its typed config.
++
++        Language overrides accept top-level fields and text_config/llm_config
++        mappings, in increasing precedence. All target the same typed LLM.
++        """
++        updates = copy.deepcopy(config_dict)
++        nested_updates = []
++        for key in ("text_config", "llm_config"):
++            value = updates.pop(key, {})
++            if not isinstance(value, dict):
++                raise TypeError(f"Audio {key} overrides must be a mapping")
++            nested_updates.append(value)
++        top_level_updates = {
++            key: updates[key]
++            for key in (
++                "max_position_embeddings",
++                "rope_theta",
++                "rope_scaling",
++                "rope_parameters",
++            )
++            if key in updates
++        }
++        override_groups = (top_level_updates, *nested_updates)
++        for group in override_groups:
++            for key in ("rope_scaling", "rope_parameters"):
++                value = group.get(key)
++                if value is not None and not isinstance(value, dict):
++                    raise TypeError(f"Audio {key} overrides must be a mapping or null")
++
++        text_config = self.llm_config
++        rope_parameters = copy.deepcopy(text_config.rope_parameters)
++        language_fields = {
++            key: value
++            for group in override_groups
++            for key, value in group.items()
++            if key not in ("rope_scaling", "rope_parameters")
++        }
++        text_config.update(language_fields)
++        text_config._sglang_audio_1d_rope = True
++        for group in override_groups:
++            for key in ("rope_scaling", "rope_parameters"):
++                if key not in group:
++                    continue
++                value = group[key]
++                if value is None:
++                    rope_parameters = {
++                        "rope_theta": rope_parameters["rope_theta"],
++                        "rope_type": "default",
++                    }
++                    if hasattr(text_config, "partial_rotary_factor"):
++                        rope_parameters["partial_rotary_factor"] = (
++                            text_config.partial_rotary_factor
++                        )
++                else:
++                    rope_parameters.update(value)
++                    rope_type = value.get("rope_type", value.get("type"))
++                    if rope_type is not None:
++                        rope_parameters["rope_type"] = rope_type
++                rope_parameters["type"] = rope_parameters["rope_type"]
++            if "rope_theta" in group:
++                rope_parameters["rope_theta"] = group["rope_theta"]
++
++        text_config.rope_theta = rope_parameters["rope_theta"]
++        rope_parameters.pop("mrope_section", None)
++        rope_parameters.pop("video_rope", None)
++        text_config.rope_parameters = rope_parameters
++        text_config.rope_scaling = copy.deepcopy(rope_parameters)
++
++        # Keep typed sub-configs when applying partial nested overrides.
++        for key, value in updates.items():
++            current = getattr(self, key, None)
++            if isinstance(value, dict) and isinstance(current, PretrainedConfig):
++                current.update(value)
++            else:
++                setattr(self, key, value)
++        self.mrope_section = None
++
+     def __init__(
+         self,
+         text_config=None,
+@@ -107,7 +187,7 @@ class BailingMoeV3AudioConfig(PretrainedConfig):
+         if text_config is None:
+             text_config = llm_config
+         if isinstance(text_config, dict):
+-            text_config = dict(text_config)
++            text_config = copy.deepcopy(text_config)
+             for key in (
+                 "image_patch_token",
+                 "video_patch_token",
+@@ -117,6 +197,7 @@ class BailingMoeV3AudioConfig(PretrainedConfig):
+                 text_config.pop(key, None)
+             text_config = BailingHybridConfig(**text_config)
+         self.llm_config = text_config or BailingHybridConfig()
++        self.llm_config._sglang_audio_1d_rope = True
+         if isinstance(audio_config, dict):
+             audio_config = BailingWhisperAudioConfig.from_checkpoint_config(
+                 audio_config
+@@ -130,10 +211,9 @@ class BailingMoeV3AudioConfig(PretrainedConfig):
+         rope_parameters = self.llm_config.rope_parameters
+         rope_parameters.setdefault("rope_theta", self.llm_config.rope_theta)
+         rope_parameters.setdefault("rope_type", "default")
+-        # The shared language engine consumes three identical sequential axes for
+-        # audio/text. Preserve its trained rotary/cache ABI; no image grids exist.
+-        rope_parameters.setdefault("mrope_section", [8, 12, 12])
+-        # Audio uses sequential positions, never the visual rotary implementation.
++        # Audio/text uses engine-owned 1-D sequence positions. Legacy visual
++        # selectors must not switch this audio-only model back to M-RoPE.
++        rope_parameters.pop("mrope_section", None)
+         rope_parameters.pop("video_rope", None)
+         if getattr(self.llm_config, "audio_patch_token", None) is None:
+             self.llm_config.audio_patch_token = audio_token_id
+diff --git a/python/sglang/srt/models/bailing_moe_v3.py b/python/sglang/srt/models/bailing_moe_v3.py
+index 761248585c..b7a917cbce 100644
+--- a/python/sglang/srt/models/bailing_moe_v3.py
++++ b/python/sglang/srt/models/bailing_moe_v3.py
+@@ -175,6 +175,16 @@ class DsV3MLA(DeepseekV2AttentionMLA):
+         alt_stream: Optional[torch.cuda.Stream] = None,
+         skip_rope: bool = False,
+     ) -> None:
++        # DeepSeek rewrites every non-empty scaling dict to deepseek_yarn.
++        # Unscaled, single-axis Bailing audio must retain ordinary RoPE.
++        if (
++            getattr(config, "_sglang_audio_1d_rope", False)
++            and isinstance(rope_scaling, dict)
++            and "mrope_section" not in rope_scaling
++            and (rope_scaling.get("rope_type") or rope_scaling.get("type") or "default")
++            == "default"
++        ):
++            rope_scaling = None
+         super().__init__(
+             config,
+             hidden_size,
+diff --git a/python/sglang/srt/multimodal/processors/bailing_audio.py b/python/sglang/srt/multimodal/processors/bailing_audio.py
+index 66c6be9c9e..32511a75b4 100644
+--- a/python/sglang/srt/multimodal/processors/bailing_audio.py
++++ b/python/sglang/srt/multimodal/processors/bailing_audio.py
+@@ -150,21 +150,14 @@ class BailingAudioProcessor:
+                 (mel_length,), (patch_length,)
+             ).to_dict()
+             items.append(item)
+-        # Bailing audio follows Qwen-style ASR M-RoPE: all three axes share
+-        # the sequential token index. Keep delta at zero so decode positions
+-        # continue normally after the expanded audio placeholder tokens.
+-        mrope_positions = (
+-            torch.arange(input_ids.numel(), dtype=torch.long)
+-            .unsqueeze(0)
+-            .expand(3, -1)
+-            .clone()
+-        )
++        # The engine assigns continuous 1-D positions after placeholder
++        # expansion, including prefill chunks, prefix reuse, and decode.
+         return MultimodalProcessorOutput(
+             mm_items=items,
+             input_ids=input_ids.tolist(),
+             audio_token_id=self.audio_token_id,
+-            mrope_positions=mrope_positions,
+-            mrope_position_delta=torch.tensor([0], dtype=torch.long),
++            mrope_positions=None,
++            mrope_position_delta=None,
+         )
+ 
+     def _get_audio_offsets(
+diff --git a/python/sglang/srt/utils/hf_transformers/config.py b/python/sglang/srt/utils/hf_transformers/config.py
+index 645ee3c10a..46612f0f31 100644
+--- a/python/sglang/srt/utils/hf_transformers/config.py
++++ b/python/sglang/srt/utils/hf_transformers/config.py
+@@ -19,6 +19,7 @@ from typing import Optional
+ from transformers import PretrainedConfig
+ from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
+ 
++from sglang.srt.configs.bailing_audio_v3 import BailingMoeV3AudioConfig
+ from sglang.srt.configs.deepseek_v41 import (
+     DeepseekV41Config,
+     normalize_deepseek_v41_config,
+@@ -324,15 +325,18 @@ def get_config(
+     if model_override_args:
+         if isinstance(config, DeepseekV41Config):
+             model_override_args = normalize_deepseek_v41_config(model_override_args)
+-        # A plain update() setattrs a dict-valued override straight onto the
+-        # config, so '{"text_config": {...}}' on a VLM would replace the whole
+-        # sub-config with a dict and break attribute access downstream.
+-        for key, value in model_override_args.items():
+-            current = getattr(config, key, None)
+-            if isinstance(value, dict) and isinstance(current, PretrainedConfig):
+-                current.update(value)
+-            else:
+-                setattr(config, key, value)
++        if isinstance(config, BailingMoeV3AudioConfig):
++            # Audio owns alias merging and propagation into its typed LLM
++            # config. Per-field setattr would bypass that model-specific hook.
++            config.update(model_override_args)
++        else:
++            # Merge nested configs instead of replacing them with plain dicts.
++            for key, value in model_override_args.items():
++                current = getattr(config, key, None)
++                if isinstance(value, dict) and isinstance(current, PretrainedConfig):
++                    current.update(value)
++                else:
++                    setattr(config, key, value)
+ 
+     if is_gguf and not gguf_has_sidecar_config:
+         if config.model_type not in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
+diff --git a/test/registered/unit/configs/test_bailing_audio_rope_config.py b/test/registered/unit/configs/test_bailing_audio_rope_config.py
+new file mode 100644
+index 0000000000..b7e31f915d
+--- /dev/null
++++ b/test/registered/unit/configs/test_bailing_audio_rope_config.py
+@@ -0,0 +1,271 @@
++"""Regression tests for Ming audio configs."""
++
++import copy
++import json
++import tempfile
++import unittest
++
++from sglang.srt.configs.bailing_audio_v3 import BailingMoeV3AudioConfig
++from sglang.srt.configs.bailing_hybrid import BailingHybridConfig
++from sglang.test.ci.ci_register import register_cpu_ci
++from sglang.test.test_utils import CustomTestCase
++
++register_cpu_ci(est_time=5, suite="base-a-test-cpu")
++
++
++def audio_config(**text_overrides):
++    text = {
++        "max_position_embeddings": 131072,
++        "rope_theta": 6000000,
++        "partial_rotary_factor": 0.5,
++        "qk_rope_head_dim": 64,
++    }
++    text.update(text_overrides)
++    return BailingMoeV3AudioConfig(text_config=text, audio_config={})
++
++
++class TestBailingAudioRopeConfig(CustomTestCase):
++    def test_audio_defaults_to_one_dimensional_rope(self):
++        config = audio_config()
++        self.assertNotIn("mrope_section", config.llm_config.rope_parameters)
++        self.assertNotIn("video_rope", config.llm_config.rope_parameters)
++        self.assertIs(config.llm_config._sglang_audio_1d_rope, True)
++        self.assertEqual(config.llm_config.rope_parameters["rope_type"], "default")
++        self.assertEqual(config.llm_config.rope_parameters["rope_theta"], 6000000)
++
++    def test_legacy_audio_sections_are_removed_without_mutating_input(self):
++        rope = {
++            "rope_type": "default",
++            "mrope_section": [8, 12, 12],
++            "video_rope": True,
++        }
++        original = copy.deepcopy(rope)
++        config = audio_config(rope_scaling=rope)
++        self.assertNotIn("mrope_section", config.llm_config.rope_parameters)
++        self.assertNotIn("video_rope", config.llm_config.rope_parameters)
++        self.assertEqual(rope, original)
++
++    def test_top_level_yarn_and_length_update_actual_text_config(self):
++        config = audio_config()
++        text = config.llm_config
++        override = {
++            "max_position_embeddings": 262144,
++            "rope_scaling": {
++                "rope_type": "yarn",
++                "factor": 2.0,
++                "original_max_position_embeddings": 131072,
++            },
++        }
++        original = copy.deepcopy(override)
++        config.update(override)
++        self.assertIs(config.get_text_config(), text)
++        self.assertIsInstance(text, BailingHybridConfig)
++        self.assertEqual(text.max_position_embeddings, 262144)
++        self.assertEqual(text.rope_parameters["rope_type"], "yarn")
++        self.assertEqual(text.rope_parameters["factor"], 2.0)
++        self.assertEqual(text.rope_parameters["rope_theta"], 6000000)
++        self.assertEqual(text.qk_rope_head_dim, 64)
++        self.assertEqual(text.partial_rotary_factor, 0.5)
++        self.assertNotIn("mrope_section", text.rope_parameters)
++        self.assertEqual(override, original)
++
++    def test_partial_nested_update_preserves_typed_config(self):
++        config = audio_config()
++        text = config.llm_config
++        config.update({"llm_config": {"max_position_embeddings": 262144}})
++        self.assertIs(config.llm_config, text)
++        self.assertIsInstance(text, BailingHybridConfig)
++        self.assertEqual(text.max_position_embeddings, 262144)
++
++    def test_nested_audio_override_preserves_typed_config(self):
++        config = audio_config()
++        audio = config.audio_config
++        config.update({"audio_config": {"chunk_frames": 1500}})
++        self.assertIs(config.audio_config, audio)
++        self.assertEqual(audio.chunk_frames, 1500)
++        self.assertEqual(audio.whisper_encoder_config["n_ctx"], 3000)
++
++    def test_nested_rope_override_wins_across_aliases(self):
++        config = audio_config()
++        config.update(
++            {
++                "rope_theta": 10000,
++                "rope_parameters": {"rope_type": "yarn", "factor": 4.0},
++                "llm_config": {
++                    "rope_scaling": {
++                        "type": "yarn",
++                        "factor": 2.0,
++                        "rope_theta": 6000000,
++                    }
++                },
++            }
++        )
++        self.assertEqual(config.llm_config.rope_parameters["factor"], 2.0)
++        self.assertEqual(config.llm_config.rope_parameters["type"], "yarn")
++        self.assertEqual(config.llm_config.rope_parameters["rope_type"], "yarn")
++        self.assertEqual(config.llm_config.rope_parameters["rope_theta"], 6000000)
++        self.assertEqual(config.llm_config.rope_theta, 6000000)
++
++    def test_null_scaling_resets_to_unscaled_rope(self):
++        config = audio_config()
++        config.update({"rope_scaling": {"rope_type": "yarn", "factor": 2.0}})
++        config.update({"rope_scaling": None})
++        self.assertEqual(config.llm_config.rope_parameters["rope_type"], "default")
++        self.assertNotIn("factor", config.llm_config.rope_parameters)
++
++    def test_invalid_mapping_fails_without_partial_mutation(self):
++        for key, value in [
++            ("rope_scaling", "yarn"),
++            ("rope_parameters", []),
++            ("llm_config", None),
++            ("text_config", None),
++        ]:
++            with self.subTest(key=key, value=value):
++                config = audio_config()
++                original = copy.deepcopy(config.llm_config.to_dict())
++                with self.assertRaises(TypeError):
++                    config.update({"max_position_embeddings": 262144, key: value})
++                self.assertEqual(config.llm_config.to_dict(), original)
++
++    def test_scalar_theta_updates_both_representations(self):
++        config = audio_config()
++        config.update({"rope_theta": 123456})
++        self.assertEqual(config.llm_config.rope_theta, 123456)
++        self.assertEqual(config.llm_config.rope_parameters["rope_theta"], 123456)
++
++    def test_explicit_scaling_survives_initialization(self):
++        config = audio_config(rope_scaling={"rope_type": "yarn", "factor": 2.0})
++        self.assertEqual(config.llm_config.rope_parameters["rope_type"], "yarn")
++        self.assertEqual(config.llm_config.rope_parameters["factor"], 2.0)
++        self.assertNotIn("mrope_section", config.llm_config.rope_parameters)
++
++    def test_top_level_override_cannot_reenable_audio_mrope(self):
++        config = audio_config()
++        config.update(
++            {
++                "rope_parameters": {
++                    "rope_type": "default",
++                    "mrope_section": [8, 12, 12],
++                    "video_rope": True,
++                }
++            }
++        )
++        self.assertNotIn("mrope_section", config.llm_config.rope_parameters)
++        self.assertNotIn("video_rope", config.llm_config.rope_parameters)
++
++    def test_language_override_alias_precedence(self):
++        config = audio_config()
++        config.update(
++            {
++                "max_position_embeddings": 65536,
++                "rope_scaling": {"rope_type": "yarn", "factor": 4.0},
++                "text_config": {
++                    "max_position_embeddings": 262144,
++                    "rope_parameters": {"rope_type": "yarn", "factor": 2.0},
++                },
++                "llm_config": {"max_position_embeddings": 393216},
++            }
++        )
++        self.assertEqual(config.llm_config.max_position_embeddings, 393216)
++        self.assertEqual(config.llm_config.rope_parameters["factor"], 2.0)
++        self.assertNotIn("text_config", vars(config))
++
++    def test_real_hf_loader_routes_audio_overrides_to_typed_text_config(self):
++        """CLI aliases must change the effective LLM, not just the wrapper."""
++        from sglang.srt.utils.hf_transformers import get_config, get_hf_text_config
++        from sglang.srt.utils.hf_transformers.common import get_context_length
++
++        temporary_dir = tempfile.TemporaryDirectory()
++        self.addCleanup(temporary_dir.cleanup)
++        audio_config().save_pretrained(temporary_dir.name)
++        language_override = {
++            "max_position_embeddings": 262144,
++            "rope_scaling": {
++                "rope_type": "yarn",
++                "factor": 2.0,
++                "original_max_position_embeddings": 131072,
++                "rope_theta": 6000000,
++            },
++        }
++        for key in (None, "text_config", "llm_config"):
++            with self.subTest(key=key):
++                override = (
++                    copy.deepcopy(language_override)
++                    if key is None
++                    else {key: copy.deepcopy(language_override)}
++                )
++                override["audio_config"] = {"chunk_frames": 1500}
++                original = copy.deepcopy(override)
++                config = get_config(
++                    temporary_dir.name,
++                    trust_remote_code=False,
++                    model_override_args=override,
++                )
++                text = get_hf_text_config(config)
++                self.assertIs(text, config.llm_config)
++                self.assertIs(config.get_text_config(), text)
++                self.assertIsInstance(text, BailingHybridConfig)
++                self.assertEqual(text.max_position_embeddings, 262144)
++                self.assertEqual(get_context_length(text), 262144)
++                self.assertEqual(text.rope_parameters["rope_type"], "yarn")
++                self.assertEqual(text.rope_parameters["factor"], 2.0)
++                self.assertEqual(
++                    text.rope_parameters["original_max_position_embeddings"], 131072
++                )
++                self.assertEqual(text.rope_parameters["rope_theta"], 6000000)
++                self.assertNotIn("mrope_section", text.rope_parameters)
++                self.assertEqual(config.audio_config.chunk_frames, 1500)
++                self.assertEqual(
++                    config.audio_config.whisper_encoder_config["n_ctx"], 3000
++                )
++                self.assertEqual(override, original)
++
++    def test_server_args_use_effective_language_context_without_bypass(self):
++        """262K must be accepted from the model config without a context bypass."""
++        from sglang.srt.configs.model_config import ModelConfig
++        from sglang.srt.environ import envs
++        from sglang.srt.server_args import prepare_server_args
++
++        temporary_dir = tempfile.TemporaryDirectory()
++        self.addCleanup(temporary_dir.cleanup)
++        audio_config().save_pretrained(temporary_dir.name)
++        language_override = {
++            "max_position_embeddings": 262144,
++            "rope_scaling": {
++                "rope_type": "yarn",
++                "factor": 2.0,
++                "original_max_position_embeddings": 131072,
++                "rope_theta": 6000000,
++            },
++        }
++        for key in (None, "text_config", "llm_config"):
++            with self.subTest(key=key):
++                override = (
++                    language_override if key is None else {key: language_override}
++                )
++                args = prepare_server_args(
++                    [
++                        "--model-path",
++                        temporary_dir.name,
++                        "--device",
++                        "cpu",
++                        "--enable-multimodal",
++                        "--context-length",
++                        "262144",
++                        "--json-model-override-args",
++                        json.dumps(override),
++                    ]
++                )
++                with envs.SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN.override(False):
++                    config = ModelConfig.from_server_args(args)
++                self.assertEqual(config.context_len, 262144)
++                self.assertEqual(config.hf_text_config.max_position_embeddings, 262144)
++                self.assertEqual(
++                    config.hf_text_config.rope_parameters["rope_type"], "yarn"
++                )
++                self.assertEqual(config.hf_text_config.rope_parameters["factor"], 2.0)
++                self.assertIs(config.hf_text_config, config.hf_config.llm_config)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/test/registered/unit/models/test_bailing_audio_plain_rope.py b/test/registered/unit/models/test_bailing_audio_plain_rope.py
+new file mode 100644
+index 0000000000..aeb955b433
+--- /dev/null
++++ b/test/registered/unit/models/test_bailing_audio_plain_rope.py
+@@ -0,0 +1,169 @@
++"""Regression tests for Ming audio models."""
++
++import unittest
++from types import SimpleNamespace
++from unittest.mock import patch
++
++from sglang.srt.models import bailing_moe_v3
++from sglang.test.ci.ci_register import register_cpu_ci
++from sglang.test.test_utils import CustomTestCase
++
++register_cpu_ci(est_time=5, suite="base-a-test-cpu")
++
++
++class TestBailingAudioPlainRope(CustomTestCase):
++    def _patch(self, target, attribute, replacement):
++        patcher = patch.object(target, attribute, replacement)
++        self.addCleanup(patcher.stop)
++        return patcher.start()
++
++    def test_plain_rope_is_not_rewritten_by_deepseek_parent(self):
++        for rope in [
++            {"rope_type": "default", "rope_theta": 6000000},
++            {"type": "default", "partial_rotary_factor": 0.5},
++        ]:
++            with self.subTest(rope=rope):
++                captured = {}
++
++                def parent_init(self, *args, **kwargs):
++                    captured["rope_scaling"] = args[9]
++
++                self._patch(
++                    bailing_moe_v3.DeepseekV2AttentionMLA, "__init__", parent_init
++                )
++                self._patch(
++                    bailing_moe_v3,
++                    "get_parallel",
++                    lambda: SimpleNamespace(attn_tp_rank=0, attn_tp_size=1),
++                )
++                bailing_moe_v3.DsV3MLA(
++                    config=SimpleNamespace(_sglang_audio_1d_rope=True),
++                    hidden_size=2560,
++                    num_heads=32,
++                    qk_nope_head_dim=128,
++                    qk_rope_head_dim=64,
++                    v_head_dim=128,
++                    q_lora_rank=None,
++                    kv_lora_rank=512,
++                    rope_theta=6000000,
++                    rope_scaling=rope,
++                    max_position_embeddings=131072,
++                )
++                self.assertIs(captured["rope_scaling"], None)
++
++    def test_explicit_yarn_is_forwarded_to_existing_parent_path(self):
++        captured = {}
++        rope = {"rope_type": "yarn", "factor": 2.0}
++
++        def parent_init(self, *args, **kwargs):
++            captured["rope_scaling"] = args[9]
++
++        self._patch(bailing_moe_v3.DeepseekV2AttentionMLA, "__init__", parent_init)
++        self._patch(
++            bailing_moe_v3,
++            "get_parallel",
++            lambda: SimpleNamespace(attn_tp_rank=0, attn_tp_size=1),
++        )
++        bailing_moe_v3.DsV3MLA(
++            config=SimpleNamespace(),
++            hidden_size=2560,
++            num_heads=32,
++            qk_nope_head_dim=128,
++            qk_rope_head_dim=64,
++            v_head_dim=128,
++            q_lora_rank=None,
++            kv_lora_rank=512,
++            rope_theta=6000000,
++            rope_scaling=rope,
++            max_position_embeddings=262144,
++        )
++        self.assertIs(captured["rope_scaling"], rope)
++
++    def test_existing_sectioned_paths_keep_their_factory(self):
++        for video_rope in [False, True]:
++            with self.subTest(video_rope=video_rope):
++                calls = []
++                rope = {"rope_type": "default", "mrope_section": [8, 12, 12]}
++                if video_rope:
++                    rope["video_rope"] = True
++
++                def parent_init(self, *args, **kwargs):
++                    args[9]["rope_type"] = "deepseek_yarn"
++
++                def visual_factory(*args, **kwargs):
++                    calls.append("visual")
++                    return None
++
++                def audio_factory(*args, **kwargs):
++                    calls.append("sectioned")
++                    return None
++
++                self._patch(
++                    bailing_moe_v3.DeepseekV2AttentionMLA, "__init__", parent_init
++                )
++                self._patch(bailing_moe_v3, "get_rope", visual_factory)
++                self._patch(
++                    bailing_moe_v3.BailingMlaRotaryEmbedding,
++                    "get_cached",
++                    audio_factory,
++                )
++                self._patch(
++                    bailing_moe_v3,
++                    "get_parallel",
++                    lambda: SimpleNamespace(attn_tp_rank=0, attn_tp_size=1),
++                )
++                bailing_moe_v3.DsV3MLA(
++                    config=SimpleNamespace(rope_interleave=True),
++                    hidden_size=2560,
++                    num_heads=32,
++                    qk_nope_head_dim=128,
++                    qk_rope_head_dim=64,
++                    v_head_dim=128,
++                    q_lora_rank=None,
++                    kv_lora_rank=512,
++                    rope_theta=6000000,
++                    rope_scaling=rope,
++                    max_position_embeddings=131072,
++                )
++                self.assertEqual(calls, ["visual" if video_rope else "sectioned"])
++                self.assertEqual(rope["rope_type"], "default")
++
++    def test_non_audio_language_rope_keeps_original_parent_arguments(self):
++        for rope in [
++            None,
++            {"rope_type": "default", "rope_theta": 6000000},
++            {"type": "default"},
++            {"rope_type": "yarn", "factor": 2.0},
++        ]:
++            with self.subTest(rope=rope):
++                captured = {}
++
++                def parent_init(self, *args, **kwargs):
++                    captured["rope_scaling"] = args[9]
++
++                self._patch(
++                    bailing_moe_v3.DeepseekV2AttentionMLA, "__init__", parent_init
++                )
++                self._patch(
++                    bailing_moe_v3,
++                    "get_parallel",
++                    lambda: SimpleNamespace(attn_tp_rank=0, attn_tp_size=1),
++                )
++                bailing_moe_v3.DsV3MLA(
++                    config=SimpleNamespace(),
++                    hidden_size=2560,
++                    num_heads=32,
++                    qk_nope_head_dim=128,
++                    qk_rope_head_dim=64,
++                    v_head_dim=128,
++                    q_lora_rank=None,
++                    kv_lora_rank=512,
++                    rope_theta=6000000,
++                    rope_scaling=rope,
++                    max_position_embeddings=262144,
++                )
++                self.assertIs(captured["rope_scaling"], rope)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/test/registered/unit/multimodal/test_bailing_audio_positions.py b/test/registered/unit/multimodal/test_bailing_audio_positions.py
+new file mode 100644
+index 0000000000..768e655ffe
+--- /dev/null
++++ b/test/registered/unit/multimodal/test_bailing_audio_positions.py
+@@ -0,0 +1,34 @@
++"""Regression tests for Ming audio multimodal."""
++
++import unittest
++from types import SimpleNamespace
++
++import torch
++
++from sglang.srt.multimodal.processors.bailing_audio import BailingAudioProcessor
++from sglang.test.ci.ci_register import register_cpu_ci
++from sglang.test.test_utils import CustomTestCase
++
++register_cpu_ci(est_time=5, suite="base-a-test-cpu")
++
++
++class TestBailingAudioPositions(CustomTestCase):
++    def test_audio_uses_engine_positions_after_placeholder_expansion(self):
++        processor = BailingAudioProcessor.__new__(BailingAudioProcessor)
++        processor.spec = SimpleNamespace(token_count=lambda frames: 2)
++        processor.audio_token_id = 2
++        processor.audio_start_token = "<audio>"
++        processor.audio_patch_token = "<audioPatch>"
++        processor.audio_end_token = "</audio>"
++        processor.tokenizer = lambda text, **kw: SimpleNamespace(
++            input_ids=torch.tensor([[10, 1, 2, 2, 3, 20]])
++        )
++        result = processor.build_output("before<AUDIO>after", [torch.zeros(1, 8, 128)])
++        self.assertEqual(result.input_ids, [10, 1, 2, 2, 3, 20])
++        self.assertEqual(result.mm_items[0].offsets, [(2, 3)])
++        self.assertIs(result.mrope_positions, None)
++        self.assertIs(result.mrope_position_delta, None)
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.43.0
+

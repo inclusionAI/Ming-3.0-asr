@@ -1,0 +1,8 @@
+# Python 3.12, CUDA 13, and the pinned SGLang source overlay.
+sglang==0.5.20
+torch==2.13.0
+torchaudio==2.11.0
+transformers==5.12.1
+sglang-kernel==0.4.7
+flashinfer-python[cu13]==0.6.18
+dill==0.4.1

@@ -1,0 +1,2 @@
+{"id":"without_context","audio":"audio/context_same_sentence_pcm16.wav","prompt":null}
+{"id":"with_context","audio":"audio/context_same_sentence_pcm16.wav","prompt":"Please recognize the language of this speech and transcribe it, placing a `\t` between the identified language and the transcribe.This is an audio about 同囚.This audio may contains the following words or phrases:同囚,黄国权,游学修,关楚耀,赵永洪,赵咏瑶,狱警,长镜头,吞玻璃戏,糖化玻璃,真实案例数据."}
