@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny"><b>Hugging Face</b></a>
+  &nbsp;·&nbsp; <a href="https://www.modelscope.cn/models/inclusionAI/Ming-3.0-asr-tiny"><b>ModelScope</b></a>
   &nbsp;·&nbsp; <a href="https://niniandy.github.io/Ming-3.0-asr-tiny-blog/"><b>Project Blog</b></a>
   &nbsp;·&nbsp; <a href="#quick-start"><b>Quick Start</b></a>
   &nbsp;·&nbsp; <a href="#cookbook"><b>Cookbook</b></a>
