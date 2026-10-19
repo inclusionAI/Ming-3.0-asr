@@ -172,7 +172,7 @@ Open each WAV sample to listen, then compare the reference with the model output
 
 ### Mandarin Transcription
 
-[▶ Play audio](examples/cases/audio/chinese_common_voice.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/chinese_common_voice.wav)
 
 | Item | Text |
 | --- | --- |
@@ -181,7 +181,7 @@ Open each WAV sample to listen, then compare the reference with the model output
 
 ### English Transcription
 
-[▶ Play audio](examples/cases/audio/english_common_voice.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/english_common_voice.wav)
 
 | Item | Text |
 | --- | --- |
@@ -192,7 +192,7 @@ Open each WAV sample to listen, then compare the reference with the model output
 
 Only the second request adds a topic and hotwords to the same audio clip.
 
-[▶ Play audio](examples/cases/audio/context_same_sentence_pcm16.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/context_same_sentence_pcm16.wav)
 
 | Item | Text |
 | --- | --- |

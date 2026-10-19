@@ -24,11 +24,11 @@ SAMPLE_FILES = {
 ))
 def test_audio_links_point_to_original_wav_files(readme):
     contents = readme.read_text(encoding="utf-8")
-    paths = re.findall(r"\[▶ Play audio\]\(([^)]+\.wav\?raw=1)\)", contents)
+    paths = re.findall(r"\[▶ Play audio\]\((https://niniandy\.github\.io/Ming-3\.0-asr-tiny-blog/assets/audio/[^)]+\.wav)\)", contents)
     assert len(paths) == 3
-    assert {Path(path.removesuffix("?raw=1")).name for path in paths} == SAMPLE_FILES
+    assert {Path(path).name for path in paths} == SAMPLE_FILES
     for path in paths:
-        assert (readme.parent / path.removesuffix("?raw=1")).is_file()
+        assert (ROOT / "examples/cases/audio" / Path(path).name).is_file()
     assert "<audio" not in contents
     assert "9f757b2d-c1df-4223-afb7-079b7b87bfc5" not in contents
 
@@ -39,7 +39,7 @@ def test_demo_follows_model_introduction():
         contents.index("## Quick Start")
         < contents.index("### 5. SGLang Accelerated Serving")
         < contents.index('<a id="cookbook"></a>')
-        < contents.index("[▶ Play audio](examples/cases/audio/chinese_common_voice.wav?raw=1)")
+        < contents.index("[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/chinese_common_voice.wav)")
     )
     assert "git clone https://github.com/inclusionAI/Ming-3.0-asr.git" in contents
     assert "Real speech comes with accents" in contents

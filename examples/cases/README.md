@@ -6,7 +6,7 @@ Open each WAV link to listen to the sample.
 
 ## 1. Context ASR: Correcting a Film Title with Hotwords
 
-[▶ Play audio](audio/context_same_sentence_pcm16.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/context_same_sentence_pcm16.wav)
 
 6.57 seconds · ContextASR-Bench ID `04385-3_0-105184_0`
 
@@ -30,7 +30,7 @@ python examples/transcribe.py \
 
 ## 2. English
 
-[▶ Play audio](audio/english_common_voice.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/english_common_voice.wav)
 
 2.26 seconds · Common Voice 15 ID `common_voice_en_100540`
 
@@ -47,7 +47,7 @@ python examples/transcribe.py --model "$MODEL_DIR" \
 
 ## 3. Mandarin
 
-[▶ Play audio](audio/chinese_common_voice.wav?raw=1)
+[▶ Play audio](https://niniandy.github.io/Ming-3.0-asr-tiny-blog/assets/audio/chinese_common_voice.wav)
 
 5.90 seconds · Common Voice 15 ID `common_voice_zh-CN_22099416`
 
