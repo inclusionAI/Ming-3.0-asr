@@ -5,4 +5,5 @@ type: software
 authors:
   - name: inclusionAI
 license: MIT
-url: "https://huggingface.co/inclusionAI/Ming-3.0-asr-tiny"
+url: "https://github.com/inclusionAI/Ming-3.0-asr"
+repository-code: "https://github.com/inclusionAI/Ming-3.0-asr"
